@@ -236,14 +236,14 @@ The stub model tests use a scripted queue agent and claim agents scripted per cl
 
 Run the harness on the real model, capped at five claims, and watch it on the dashboard. Bring `docs/SPEC.md`, `docs/TECH_STACK.md` and `docs/STATUS.md` up to date with the product as it now is.
 
-- [ ] Live: after `uv run -m backend.seed`, with `npm run dev` running, `uv run -m agent --limit 5` prints five claim lines and a summary
-- [ ] Live: afterwards `curl -s localhost:8000/api/claims` shows five claims worked, 20 waiting and none in progress
-- [ ] Live: `curl -s localhost:8000/api/runs/latest` shows a finished run capped at 5, with every to-do item done or left for a handler, and the summary
-- [ ] Live, in the browser: queue page snapshots taken during the run show the to-do list filling in and items being ticked off, and the summary at the end
-- [ ] Live, in the browser: each of the five claim pages shows the claim agent's steps and at least one section under "What the agent read"
-- [ ] Live: every approval over $1,000 is waiting for sign-off with no payment, and every other approval is paid exactly its payout
-- [ ] `docs/SPEC.md` describes the queue run, the to-do list, looking things up in the manual and the claims left for a handler. `docs/TECH_STACK.md` describes the two agents, their middleware and the model. `docs/STATUS.md` describes what's built, how to run it, and this live run with its time and decisions
-- [ ] `npm run check` passes
+- [x] Live: after `uv run -m backend.seed`, with `npm run dev` running, `uv run -m agent --limit 5` prints five claim lines and a summary
+- [x] Live: afterwards `curl -s localhost:8000/api/claims` shows five claims worked, 20 waiting and none in progress
+- [x] Live: `curl -s localhost:8000/api/runs/latest` shows a finished run capped at 5, with every to-do item done or left for a handler, and the summary
+- [x] Live, in the browser: queue page snapshots taken during the run show the to-do list filling in and items being ticked off, and the summary at the end
+- [x] Live, in the browser: each of the five claim pages shows the claim agent's steps and at least one section under "What the agent read"
+- [x] Live: every approval over $1,000 is waiting for sign-off with no payment, and every other approval is paid exactly its payout
+- [x] `docs/SPEC.md` describes the queue run, the to-do list, looking things up in the manual and the claims left for a handler. `docs/TECH_STACK.md` describes the two agents, their middleware and the model. `docs/STATUS.md` describes what's built, how to run it, and this live run with its time and decisions
+- [x] `npm run check` passes
 
 ## Not in this plan
 

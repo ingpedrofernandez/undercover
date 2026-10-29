@@ -226,6 +226,10 @@ p {
   text-align: center;
 }
 
+.run h3 {
+  margin: 20px 0 6px;
+}
+
 .summary {
   white-space: pre-wrap;
   max-width: 75ch;
