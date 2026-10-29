@@ -1,7 +1,15 @@
-import type { Claim } from "../api";
+import type { Claim, Status } from "../api";
 import { money, time } from "../format";
 import { DecisionChip } from "./Chips";
 import { SignOffForm } from "./SignOffForm";
+
+// What the panel says about a claim that has no decision yet.
+function progress(status: Status): string {
+  if (status === "in_progress") return "The agent is working on this claim.";
+  if (status === "left_for_handler")
+    return "The agent couldn't finish this claim after two tries, so it's left for a handler.";
+  return "The agent hasn't started on this claim.";
+}
 
 export function DecisionPanel({
   claim,
@@ -12,13 +20,7 @@ export function DecisionPanel({
   return (
     <section className="panel" aria-labelledby="decision-title">
       <h2 id="decision-title">Decision</h2>
-      {!decision && (
-        <p className="muted">
-          {claim.status === "in_progress"
-            ? "The agent is working on this claim."
-            : "The agent hasn't started on this claim."}
-        </p>
-      )}
+      {!decision && <p className="muted">{progress(claim.status)}</p>}
       {decision && (
         <>
           <div className="decision-line">

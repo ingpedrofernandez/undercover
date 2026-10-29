@@ -1,13 +1,17 @@
-"""The UnderCover Agent."""
+"""The UnderCover Agent's claim agent, which works one claim from a clean start."""
 
 import json
 import os
 import uuid
-from collections import Counter
 from typing import Any
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_openai import ChatOpenAI
@@ -20,6 +24,10 @@ load_dotenv(override=True)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
+TIMEOUT_SECONDS = 120
+RETRIES = 2
+RETRY_DELAY_SECONDS = 1.0
+CLAIM_MODEL_CALLS = 30
 
 
 def model() -> ChatOpenAI:
@@ -30,7 +38,19 @@ def model() -> ChatOpenAI:
         base_url=OPENROUTER_BASE_URL,
         api_key=SecretStr(os.environ["OPENROUTER_API_KEY"]),
         reasoning_effort=None if name else "low",
+        timeout=TIMEOUT_SECONDS,
+        max_retries=0,
     )
+
+
+def harness(model_calls: int) -> list[AgentMiddleware[Any, Any, Any]]:
+    """Retry a failed model call with backoff, and stop an agent after model_calls."""
+    return [
+        ModelRetryMiddleware(
+            max_retries=RETRIES, initial_delay=RETRY_DELAY_SECONDS, on_failure="error"
+        ),
+        ModelCallLimitMiddleware(run_limit=model_calls, exit_behavior="error"),
+    ]
 
 
 class BackendError(Exception):
@@ -62,13 +82,13 @@ def steps(message: AnyMessage) -> list[tuple[str, str]]:
 
 
 def run(claim_id: str, thread_id: str, llm: BaseChatModel | None = None) -> str:
-    """Work one claim, recording each step with the backend, and return the reply."""
-    call_backend("POST", f"/api/claims/{claim_id}/start", {"thread_id": thread_id})
+    """Work a started claim, recording each step, and return the reply."""
     instructions = call_backend("GET", "/api/instructions")["claim"]
     agent = create_agent(
         llm or model(),
         tools=TOOLS,
         system_prompt=instructions,
+        middleware=harness(CLAIM_MODEL_CALLS),
         checkpointer=InMemorySaver(),
     )
     states = agent.stream(
@@ -89,26 +109,42 @@ def run(claim_id: str, thread_id: str, llm: BaseChatModel | None = None) -> str:
     return messages[-1].text
 
 
+def report(claim: dict[str, Any]) -> str:
+    """Describe a claim's outcome in one line, from the backend's record."""
+    decision = claim["decision"]
+    line = f"{claim['claim_id']}  {decision['decision']}  ${decision['payout']:,.2f}"
+    if claim["status"] == "waiting_for_sign_off":
+        return f"{line}  waiting for sign-off"
+    if decision["decision"] == "approve":
+        return f"{line}  {'paid' if claim['payment'] else 'not paid'}"
+    return line
+
+
+def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
+    """Start a claim and work it, putting it right if it fails, and report one line."""
+    thread_id = str(uuid.uuid4())
+    started = request("POST", f"/api/claims/{claim_id}/start", {"thread_id": thread_id})
+    if started.is_error:
+        return f"{claim_id}  not started: {started.json()['detail']}"
+    try:
+        run(claim_id, thread_id, llm)
+        problem = "The claim agent finished without recording a decision"
+    except Exception as error:  # one failed claim must never stop the queue
+        problem = f"{type(error).__name__}: {error}".splitlines()[0]
+    claim = call_backend("GET", f"/api/claims/{claim_id}")
+    if claim["status"] != "in_progress":
+        return report(claim)
+    claim = call_backend("POST", f"/api/claims/{claim_id}/failure", {"reason": problem})
+    problem = problem.rstrip(".")
+    if claim["status"] == "left_for_handler":
+        return f"{claim_id}  failed again: {problem}. Left for a handler."
+    return f"{claim_id}  failed: {problem}. Back in the queue."
+
+
 def work_queue() -> None:
-    """Work every waiting claim in queue order, printing each decision and a count."""
-    outcomes: Counter[str] = Counter()
-    for claim in call_backend("GET", "/api/claims"):
-        if claim["status"] != "waiting":
-            continue
-        claim_id = claim["claim_id"]
-        try:
-            run(claim_id, str(uuid.uuid4()))
-        except Exception as error:  # one failed claim shouldn't stop the queue
-            print(f"{claim_id}  failed: {error}", flush=True)
-            outcomes["failed"] += 1
-            continue
-        decision = call_backend("GET", f"/api/claims/{claim_id}")["decision"]
-        if decision is None:
-            print(f"{claim_id}  undecided", flush=True)
-            outcomes["undecided"] += 1
-        else:
-            outcome = decision["decision"]
-            print(f"{claim_id}  {outcome}  ${decision['payout']:,.2f}", flush=True)
-            outcomes[outcome] += 1
-    counts = ", ".join(f"{outcomes[name]} {name}" for name in sorted(outcomes))
-    print(f"Worked {outcomes.total()} claims: {counts or 'none waiting'}")
+    """Work every waiting claim in queue order, printing a line for each."""
+    claims = call_backend("GET", "/api/claims")
+    waiting = [claim["claim_id"] for claim in claims if claim["status"] == "waiting"]
+    for claim_id in waiting:
+        print(work_claim(claim_id), flush=True)
+    print(f"Worked {len(waiting)} claims")

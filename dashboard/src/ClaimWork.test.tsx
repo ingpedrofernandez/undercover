@@ -121,6 +121,32 @@ it("says when the agent is working", async () => {
   expect(panel.getByText("The agent is working on this claim.")).toBeDefined();
 });
 
+it("says when a claim is left for a handler, and shows its failures", async () => {
+  const failure = (step_id: number, content: string): Step => ({
+    step_id,
+    thread_id: `t-${String(step_id)}`,
+    kind: "error",
+    content,
+    created_at: decidedAt,
+  });
+  showClaim({ ...claim, status: "left_for_handler", thread_id: "t-2" }, [
+    failure(1, "RuntimeError: The model timed out. Back in the queue."),
+    failure(2, "RuntimeError: The model timed out. Left for a handler."),
+  ]);
+  const panel = await decisionPanel();
+  expect(
+    panel.getByText(
+      "The agent couldn't finish this claim after two tries, so it's left for a handler.",
+    ),
+  ).toBeDefined();
+  const failures = await screen.findAllByText("Failed");
+  expect(failures.map((label) => label.parentElement?.textContent)).toEqual([
+    "Failed RuntimeError: The model timed out. Back in the queue.",
+    "Failed RuntimeError: The model timed out. Left for a handler.",
+  ]);
+  expect(failures[0].closest("li")?.className).toBe("step step-error");
+});
+
 it("shows an approval and its payment", async () => {
   showClaim(approved, steps);
   const panel = await decisionPanel();

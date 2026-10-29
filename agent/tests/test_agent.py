@@ -8,21 +8,38 @@ from agent.tools import TOOLS
 
 
 class StubModel(GenericFakeChatModel):
-    """A chat model that gives scripted replies and keeps the prompts it was sent."""
+    """A chat model that gives scripted replies and keeps the prompts it was sent.
+
+    It raises instead of replying on the calls numbered in fail_at, counting from 0.
+    """
 
     prompts: list[list[BaseMessage]] = []
+    fail_at: set[int] = set()
 
     def bind_tools(self, tools, **kwargs):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.prompts.append(messages)
+        if len(self.prompts) - 1 in self.fail_at:
+            raise RuntimeError("The model is unavailable")
         return super()._generate(messages, stop, run_manager, **kwargs)
 
 
 def call(name, text="", **args):
     return AIMessage(
         content=text, tool_calls=[{"name": name, "args": args, "id": f"call-{name}"}]
+    )
+
+
+def decide(claim_id, decision, payout, section="Section 3, Trip Delay"):
+    return call(
+        "record_decision",
+        claim_id=claim_id,
+        decision=decision,
+        payout=payout,
+        section=section,
+        reason="The delay was covered.",
     )
 
 
@@ -33,19 +50,16 @@ def script(claim_id, policy_id, customer_id, decision, payout, *extra):
                 call("get_claim", claim_id=claim_id),
                 call("get_policy", policy_id=policy_id),
                 call("get_claim_history", customer_id=customer_id),
-                call(
-                    "record_decision",
-                    claim_id=claim_id,
-                    decision=decision,
-                    payout=payout,
-                    section="Section 3, Trip Delay",
-                    reason="The delay was covered.",
-                ),
+                decide(claim_id, decision, payout),
                 *extra,
                 AIMessage(content=f"Decision: {decision}."),
             ]
         )
     )
+
+
+def start(client, claim_id, thread_id):
+    client.post(f"/api/claims/{claim_id}/start", json={"thread_id": thread_id})
 
 
 def test_tools_are_named_after_backend_operations(client):
@@ -84,6 +98,7 @@ def test_run_approves_and_pays_within_the_limit(client):
         420.0,
         call("pay_claim", text="Paying now.", claim_id="CLM-1001", amount=420.0),
     )
+    start(client, "CLM-1001", "thread-1")
     assert main.run("CLM-1001", "thread-1", stub) == "Decision: approve."
 
     claim = client.get("/api/claims/CLM-1001").json()
@@ -110,6 +125,7 @@ def test_run_approves_and_pays_within_the_limit(client):
 
 def test_run_uses_the_instructions_from_the_backend(client):
     stub = script("CLM-1003", "POL-2003", "CUS-3003", "refer", 0)
+    start(client, "CLM-1003", "thread-1")
     main.run("CLM-1003", "thread-1", stub)
     system = stub.prompts[0][0]
     assert isinstance(system, SystemMessage)
@@ -125,6 +141,7 @@ def test_payment_over_the_limit_is_refused(client):
         1350.0,
         call("pay_claim", claim_id="CLM-1002", amount=1350.0),
     )
+    start(client, "CLM-1002", "thread-2")
     main.run("CLM-1002", "thread-2", stub)
 
     refusal = stub.prompts[-1][-1]
@@ -139,6 +156,7 @@ def test_payment_over_the_limit_is_refused(client):
 
 @pytest.mark.parametrize("decision", ["decline", "refer"])
 def test_run_declines_and_refers(client, decision):
+    start(client, "CLM-1003", "thread-3")
     main.run(
         "CLM-1003", "thread-3", script("CLM-1003", "POL-2003", "CUS-3003", decision, 0)
     )
@@ -148,49 +166,16 @@ def test_run_declines_and_refers(client, decision):
     assert claim["payment"] is None
 
 
-def test_run_needs_a_waiting_claim():
-    main.run(
-        "CLM-1003", "thread-3", script("CLM-1003", "POL-2003", "CUS-3003", "refer", 0)
-    )
-    with pytest.raises(main.BackendError, match="409: Claim CLM-1003 is not waiting"):
-        main.run("CLM-1003", "thread-4", StubModel(messages=iter([])))
-
-
-def test_command_line(monkeypatch, capsys):
-    runs = []
-    monkeypatch.setattr(
-        cli,
-        "run",
-        lambda claim_id, thread_id: runs.append((claim_id, thread_id)) or "Done.",
-    )
-    cli.main(["CLM-1001"])
-    assert capsys.readouterr().out == "Done.\n"
-    assert runs[0][0] == "CLM-1001"
-    assert len(runs[0][1]) == 36
-
-
-def test_model_name(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.delenv("MODEL_NAME", raising=False)
-    assert main.model().model_name == "deepseek/deepseek-v4.1-flash"
-    assert main.model().reasoning_effort == "low"
-    monkeypatch.setenv("MODEL_NAME", "openrouter/free")
-    assert main.model().model_name == "openrouter/free"
-    assert main.model().reasoning_effort is None
-
-
 def look_up_then_refer(*lookups):
     return StubModel(
         messages=iter(
             [
                 *lookups,
-                call(
-                    "record_decision",
-                    claim_id="CLM-1020",
-                    decision="refer",
-                    payout=0,
+                decide(
+                    "CLM-1020",
+                    "refer",
+                    0,
                     section="Claims manual, section 7, Interpretation notes",
-                    reason="A person should look at this.",
                 ),
                 AIMessage(content="Decision: refer."),
             ]
@@ -204,6 +189,7 @@ def test_reading_a_section_is_recorded_as_a_read(client):
         call("read_section", document="claims_manual", section=7),
         call("list_sections", document="claims_manual"),
     )
+    start(client, "CLM-1020", "thread-5")
     main.run("CLM-1020", "thread-5", stub)
 
     steps = client.get("/api/claims/CLM-1020/steps").json()
@@ -224,6 +210,7 @@ def test_a_refused_read_is_an_ordinary_tool_result(client):
     stub = look_up_then_refer(
         call("read_section", document="claims_manual", section=99)
     )
+    start(client, "CLM-1020", "thread-6")
     main.run("CLM-1020", "thread-6", stub)
 
     refusal = stub.prompts[1][-1]
@@ -233,3 +220,25 @@ def test_a_refused_read_is_an_ordinary_tool_result(client):
     assert steps[1]["kind"] == "tool_result"
     assert steps[1]["content"].startswith("read_section: Refused with status 404")
     assert "read" not in {s["kind"] for s in steps}
+
+
+def test_command_line_works_one_claim(monkeypatch, capsys):
+    worked = []
+    monkeypatch.setattr(
+        cli, "work_claim", lambda claim_id: worked.append(claim_id) or "A line."
+    )
+    cli.main(["CLM-1001"])
+    assert capsys.readouterr().out == "A line.\n"
+    assert worked == ["CLM-1001"]
+
+
+def test_model(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    assert main.model().model_name == "deepseek/deepseek-v4.1-flash"
+    assert main.model().reasoning_effort == "low"
+    assert main.model().request_timeout == 120
+    assert main.model().max_retries == 0
+    monkeypatch.setenv("MODEL_NAME", "openrouter/free")
+    assert main.model().model_name == "openrouter/free"
+    assert main.model().reasoning_effort is None

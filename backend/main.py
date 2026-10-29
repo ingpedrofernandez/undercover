@@ -16,6 +16,7 @@ from backend.models import (
     ClaimSummary,
     Decision,
     DecisionRequest,
+    FailureRequest,
     Handler,
     Instructions,
     Payment,
@@ -29,6 +30,7 @@ from backend.models import (
 )
 
 INSTRUCTIONS = Path(__file__).parent / "instructions"
+TRIES = 2
 
 
 @asynccontextmanager
@@ -187,12 +189,41 @@ def record_step(claim_id: str, request: StepRequest, db: Database) -> Step:
     thread_id = find_claim(db, claim_id)["thread_id"]
     if thread_id is None:
         raise HTTPException(409, f"Claim {claim_id} has not been started")
+    return add_step(db, claim_id, thread_id, request.kind, request.content)
+
+
+def add_step(
+    db: sqlite3.Connection, claim_id: str, thread_id: str, kind: str, content: str
+) -> Step:
+    """Add one step to a claim."""
     row = db.execute(
         "INSERT INTO steps (claim_id, thread_id, kind, content, created_at)"
         " VALUES (?, ?, ?, ?, ?) RETURNING *",
-        (claim_id, thread_id, request.kind, request.content, now()),
+        (claim_id, thread_id, kind, content, now()),
     ).fetchone()
     return Step(**dict(row))
+
+
+@app.post("/api/claims/{claim_id}/failure", operation_id="record_failure")
+def record_failure(claim_id: str, request: FailureRequest, db: Database) -> Claim:
+    """Record a failed try on a claim; a second failure leaves it for a handler."""
+    claim = find_claim(db, claim_id)
+    if claim["status"] != "in_progress":
+        raise HTTPException(409, f"Claim {claim_id} is not in progress")
+    failures = db.execute(
+        "UPDATE claims SET failures = failures + 1 WHERE claim_id = ?"
+        " RETURNING failures",
+        (claim_id,),
+    ).fetchone()[0]
+    left = failures >= TRIES
+    db.execute(
+        "UPDATE claims SET status = ? WHERE claim_id = ?",
+        ("left_for_handler" if left else "waiting", claim_id),
+    )
+    note = "Left for a handler." if left else "Back in the queue."
+    reason = request.reason.rstrip(".")
+    add_step(db, claim_id, claim["thread_id"], "error", f"{reason}. {note}")
+    return to_claim(find_claim(db, claim_id))
 
 
 @app.get("/api/claims/{claim_id}/steps", operation_id="list_steps")

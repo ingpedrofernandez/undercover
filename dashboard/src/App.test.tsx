@@ -43,6 +43,17 @@ it("shows the queue with counts by state", async () => {
   expect(screen.getAllByText("Jul 20, 2026")).toHaveLength(2);
 });
 
+it("counts the claims left for a handler", async () => {
+  stubApi({
+    "GET /api/claims": [{ ...summary, status: "left_for_handler" }],
+  });
+  renderAt("/");
+  expect(await screen.findByLabelText("Left for a handler: 1")).toBeDefined();
+  const row = screen.getByRole("row", { name: /CLM-1002/ });
+  const chip = within(row).getByText("Left for a handler");
+  expect(chip.className).toBe("chip status-left_for_handler");
+});
+
 it("shows an error when the queue can't load", async () => {
   stubApi({ "GET /api/claims": new Refusal(500, "The backend is down") });
   renderAt("/");

@@ -102,6 +102,12 @@ function StepBody({ step }: Readonly<{ step: Step }>) {
       </details>
     );
   }
+  if (step.kind === "error")
+    return (
+      <p>
+        <span className="step-label">Failed</span> {step.content}
+      </p>
+    );
   return (
     <p>
       <span className="step-label">Agent</span> {step.content}

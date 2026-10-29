@@ -213,3 +213,56 @@ def test_list_handlers(client):
         "Priya Raman",
     ]
     assert all(h["can_approve_over_limit"] for h in handlers)
+
+
+def fail(client, claim_id, reason="The model timed out."):
+    return client.post(f"/api/claims/{claim_id}/failure", json={"reason": reason})
+
+
+def test_failure_needs_a_claim_in_progress(client):
+    assert fail(client, "CLM-1001").status_code == 409
+    start(client, "CLM-1001")
+    decide(client, "CLM-1001", "decline", 0)
+    assert fail(client, "CLM-1001").status_code == 409
+    start(client, "CLM-1002")
+    decide(client, "CLM-1002", "approve", 1350)
+    assert fail(client, "CLM-1002").status_code == 409
+    assert fail(client, "CLM-9999").status_code == 404
+
+
+def test_failure_needs_a_reason(client):
+    start(client, "CLM-1001")
+    assert fail(client, "CLM-1001", "").status_code == 422
+
+
+def test_a_first_failure_puts_the_claim_back_in_the_queue(client):
+    start(client, "CLM-1001")
+    response = fail(client, "CLM-1001", "The model timed out.")
+    assert response.status_code == 200
+    assert response.json()["status"] == "waiting"
+    steps = client.get("/api/claims/CLM-1001/steps").json()
+    assert [(s["kind"], s["content"]) for s in steps] == [
+        ("error", "The model timed out. Back in the queue.")
+    ]
+    assert steps[0]["thread_id"] == "t-1"
+
+    retry = client.post("/api/claims/CLM-1001/start", json={"thread_id": "t-2"})
+    assert retry.json()["status"] == "in_progress"
+    assert retry.json()["thread_id"] == "t-2"
+
+
+def test_a_second_failure_leaves_the_claim_for_a_handler(client):
+    start(client, "CLM-1001")
+    fail(client, "CLM-1001", "The model timed out")
+    start(client, "CLM-1001")
+    response = fail(client, "CLM-1001", "The model is unavailable")
+    assert response.json()["status"] == "left_for_handler"
+    steps = client.get("/api/claims/CLM-1001/steps").json()
+    assert [s["content"] for s in steps] == [
+        "The model timed out. Back in the queue.",
+        "The model is unavailable. Left for a handler.",
+    ]
+    assert start(client, "CLM-1001").status_code == 409
+    assert decide(client, "CLM-1001", "decline", 0).status_code == 409
+    claims = {c["claim_id"]: c for c in client.get("/api/claims").json()}
+    assert claims["CLM-1001"]["status"] == "left_for_handler"

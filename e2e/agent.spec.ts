@@ -70,6 +70,30 @@ test("the claim page shows what the agent read", async ({ page, request }) => {
   ).toBeVisible();
 });
 
+test("a claim that fails twice is left for a handler", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/claims/CLM-1015");
+  const heading = page.locator(".claim-heading");
+  await expect(heading.getByText("Waiting")).toBeVisible();
+
+  for (const [thread, reason] of [
+    ["e2e-4", "The model timed out"],
+    ["e2e-5", "The model is unavailable"],
+  ]) {
+    await send(request, "/api/claims/CLM-1015/start", { thread_id: thread });
+    await send(request, "/api/claims/CLM-1015/failure", { reason });
+  }
+  await expect(heading.getByText("Left for a handler")).toBeVisible();
+  await expect(
+    page.getByText("The model timed out. Back in the queue."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("The model is unavailable. Left for a handler."),
+  ).toBeVisible();
+});
+
 test("a handler signs off a payout over the limit", async ({
   page,
   request,

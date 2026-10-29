@@ -182,20 +182,20 @@ Give the claim agent `list_sections`, `search_documents` and `read_section`. Rew
 
 Add `record_failure`, the `left_for_handler` state and `error` steps. Build `work_claim` and its one-line report. Add `ModelRetryMiddleware`, `ModelCallLimitMiddleware` and the timeout to the claim agent. `uv run -m agent CLM-1001` and the pilot's `work_queue` now go through `work_claim`, until phase 5 replaces `work_queue`. Show the new state and failures on the dashboard.
 
-- [ ] pytest: `record_failure` on a waiting, decided or held claim returns 409, and an empty reason returns 422
-- [ ] pytest: a first failure moves a claim to `waiting` with an `error` step naming the reason. Starting it again gives it a new thread id. A second failure moves it to `left_for_handler`, and `start_claim` and `record_decision` on it then return 409
-- [ ] Stub model test: the claim agent raises a model error. The claim is back in `waiting` and the line is `CLM-1001  failed: <the error>. Back in the queue.`
-- [ ] Stub model test: the claim agent ends without recording a decision. The failure reason says it finished without a decision
-- [ ] Stub model test: a claim that fails a second time is `left_for_handler` and its line ends `Left for a handler.`
-- [ ] Stub model test: a model call that fails once is retried, the claim is decided, and no failure is recorded
-- [ ] Stub model test: a claim agent that keeps calling `get_claim` is stopped at 30 model calls and its claim goes back in the queue
-- [ ] Stub model test: the stub records a decision and then fails on its final reply. The claim stays decided, no failure is recorded, and the line gives the decision
-- [ ] Stub model test: `work_claim` on a claim that isn't waiting returns a "not started" line and changes nothing
-- [ ] Tests cover each line in "The one-line report", including "paid", "waiting for sign-off" and "not paid"
-- [ ] vitest covers the Left for a handler chip and tile, `error` steps, and the decision panel for a claim left for a handler
-- [ ] e2e: the test starts `CLM-1015`, records a failure, starts it again and records a second failure through the API. Without a reload, the page shows Left for a handler and both failures
-- [ ] Browser, with `browser_evaluate`: the Left for a handler chip is Raspberry with white text
-- [ ] `npm run check` passes
+- [x] pytest: `record_failure` on a waiting, decided or held claim returns 409, and an empty reason returns 422
+- [x] pytest: a first failure moves a claim to `waiting` with an `error` step naming the reason. Starting it again gives it a new thread id. A second failure moves it to `left_for_handler`, and `start_claim` and `record_decision` on it then return 409
+- [x] Stub model test: the claim agent raises a model error. The claim is back in `waiting` and the line is `CLM-1001  failed: <the error>. Back in the queue.`
+- [x] Stub model test: the claim agent ends without recording a decision. The failure reason says it finished without a decision
+- [x] Stub model test: a claim that fails a second time is `left_for_handler` and its line ends `Left for a handler.`
+- [x] Stub model test: a model call that fails once is retried, the claim is decided, and no failure is recorded
+- [x] Stub model test: a claim agent that keeps calling `get_claim` is stopped at 30 model calls and its claim goes back in the queue
+- [x] Stub model test: the stub records a decision and then fails on its final reply. The claim stays decided, no failure is recorded, and the line gives the decision
+- [x] Stub model test: `work_claim` on a claim that isn't waiting returns a "not started" line and changes nothing
+- [x] Tests cover each line in "The one-line report", including "paid", "waiting for sign-off" and "not paid"
+- [x] vitest covers the Left for a handler chip and tile, `error` steps, and the decision panel for a claim left for a handler
+- [x] e2e: the test starts `CLM-1015`, records a failure, starts it again and records a second failure through the API. Without a reload, the page shows Left for a handler and both failures
+- [x] Browser, with `browser_evaluate`: the Left for a handler chip is Raspberry with white text
+- [x] `npm run check` passes
 
 ## Phase 4: Runs and the to-do list
 
