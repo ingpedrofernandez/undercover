@@ -115,6 +115,7 @@ class Step(BaseModel):
 
 
 class Instructions(BaseModel):
+    queue: str
     claim: str
 
 

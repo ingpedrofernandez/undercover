@@ -216,21 +216,21 @@ Build the queue agent in `agent/queue.py`: its tools, the cap, the lock, the mis
 
 The stub model tests use a scripted queue agent and claim agents scripted per claim, on a database where only `CLM-1001`, `CLM-1002` and `CLM-1003` are waiting.
 
-- [ ] A pytest test checks the queue agent's tools are exactly `list_claims`, `write_todos` and `work_claim`, the first two named after backend operations
-- [ ] Stub model test: the queue agent's system prompt is the `queue` text from `get_instructions`, and its first message gives the run's cap
-- [ ] Stub model test, the to-do list: the stub writes three items, then marks them in progress and done as it works. `get_latest_run` shows the final list, the summary is the stub's last message, and the run is finished
-- [ ] Stub model test, the cap: with a cap of 2, the stub asks for all three claims. The third gets the "not started" line and stays waiting with no steps, and the missed-claims check lets the run finish
-- [ ] Stub model test, a failure doesn't stop the run: the claim agent fails on `CLM-1001`, and `CLM-1002` and `CLM-1003` are still worked and decided
-- [ ] Stub model test, tried again: `CLM-1001` fails once, the stub works the others, then `CLM-1001` again, which is decided. With a cap of 3, all three are decided, since the retry doesn't count against the cap
-- [ ] Stub model test, failed twice: `CLM-1001` fails on both tries and is `left_for_handler`, and the run finishes with the other two decided
-- [ ] Stub model test, the missed-claims check: the stub tries to finish after two claims. It receives a message naming `CLM-1003`, works it and then finishes. When nothing is missed, it finishes at its first try
-- [ ] Stub model test: two `work_claim` calls in one turn are worked one after the other, and both count against the cap
-- [ ] Stub model test: when the queue agent fails, the run is finished with a summary saying it stopped early, and no claim is in progress
-- [ ] Tests cover the command line: no arguments caps the run at the number of waiting claims, `--limit 5` caps it at five, a claim id works one claim, and with nothing waiting it says so and starts no run
-- [ ] `curl -s localhost:8000/api/instructions` returns `queue` and `claim`
-- [ ] vitest and e2e: the instructions page shows "Running the queue" and "Working a claim", with no text box, input or edit button
-- [ ] `grep -rn evals backend agent dashboard/src` finds nothing
-- [ ] `npm run check` passes
+- [x] A pytest test checks the queue agent's tools are exactly `list_claims`, `write_todos` and `work_claim`, the first two named after backend operations
+- [x] Stub model test: the queue agent's system prompt is the `queue` text from `get_instructions`, and its first message gives the run's cap
+- [x] Stub model test, the to-do list: the stub writes three items, then marks them in progress and done as it works. `get_latest_run` shows the final list, the summary is the stub's last message, and the run is finished
+- [x] Stub model test, the cap: with a cap of 2, the stub asks for all three claims. The third gets the "not started" line and stays waiting with no steps, and the missed-claims check lets the run finish
+- [x] Stub model test, a failure doesn't stop the run: the claim agent fails on `CLM-1001`, and `CLM-1002` and `CLM-1003` are still worked and decided
+- [x] Stub model test, tried again: `CLM-1001` fails once, the stub works the others, then `CLM-1001` again, which is decided. With a cap of 3, all three are decided, since the retry doesn't count against the cap
+- [x] Stub model test, failed twice: `CLM-1001` fails on both tries and is `left_for_handler`, and the run finishes with the other two decided
+- [x] Stub model test, the missed-claims check: the stub tries to finish after two claims. It receives a message naming `CLM-1003`, works it and then finishes. When nothing is missed, it finishes at its first try
+- [x] Stub model test: two `work_claim` calls in one turn are worked one after the other, and both count against the cap
+- [x] Stub model test: when the queue agent fails, the run is finished with a summary saying it stopped early, and no claim is in progress
+- [x] Tests cover the command line: no arguments caps the run at the number of waiting claims, `--limit 5` caps it at five, a claim id works one claim, and with nothing waiting it says so and starts no run
+- [x] `curl -s localhost:8000/api/instructions` returns `queue` and `claim`
+- [x] vitest and e2e: the instructions page shows "Running the queue" and "Working a claim", with no text box, input or edit button
+- [x] `grep -rn evals backend agent dashboard/src` finds nothing
+- [x] `npm run check` passes
 
 ## Phase 6: A trial on five claims
 

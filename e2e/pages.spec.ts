@@ -25,8 +25,17 @@ test("the header opens the instructions", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Instructions" }).click();
   await expect(page).toHaveURL("/instructions");
-  await expect(page.getByText(/You are the UnderCover Agent/)).toBeVisible();
+  const part = (name: string) =>
+    page.locator("section", { has: page.getByRole("heading", { name }) });
+  await expect(
+    part("Running the queue").getByText(/You run UnderCover Travel/),
+  ).toBeVisible();
+  await expect(
+    part("Working a claim").getByText(/You decide one travel insurance/),
+  ).toBeVisible();
   await expect(
     page.getByText("## 10. How we work out your payment"),
   ).toHaveCount(0);
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("button")).toHaveCount(0);
 });

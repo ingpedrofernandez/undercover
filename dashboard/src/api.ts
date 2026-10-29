@@ -109,6 +109,7 @@ export interface Step {
 }
 
 export interface Instructions {
+  queue: string;
   claim: string;
 }
 

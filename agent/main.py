@@ -28,6 +28,7 @@ TIMEOUT_SECONDS = 120
 RETRIES = 2
 RETRY_DELAY_SECONDS = 1.0
 CLAIM_MODEL_CALLS = 30
+NOT_STARTED = "not started"
 
 
 def model() -> ChatOpenAI:
@@ -120,12 +121,17 @@ def report(claim: dict[str, Any]) -> str:
     return line
 
 
+def not_started(claim_id: str, why: str) -> str:
+    """Report a claim that was never started."""
+    return f"{claim_id}  {NOT_STARTED}: {why}"
+
+
 def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
     """Start a claim and work it, putting it right if it fails, and report one line."""
     thread_id = str(uuid.uuid4())
     started = request("POST", f"/api/claims/{claim_id}/start", {"thread_id": thread_id})
     if started.is_error:
-        return f"{claim_id}  not started: {started.json()['detail']}"
+        return not_started(claim_id, started.json()["detail"])
     try:
         run(claim_id, thread_id, llm)
         problem = "The claim agent finished without recording a decision"
@@ -139,12 +145,3 @@ def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
     if claim["status"] == "left_for_handler":
         return f"{claim_id}  failed again: {problem}. Left for a handler."
     return f"{claim_id}  failed: {problem}. Back in the queue."
-
-
-def work_queue() -> None:
-    """Work every waiting claim in queue order, printing a line for each."""
-    claims = call_backend("GET", "/api/claims")
-    waiting = [claim["claim_id"] for claim in claims if claim["status"] == "waiting"]
-    for claim_id in waiting:
-        print(work_claim(claim_id), flush=True)
-    print(f"Worked {len(waiting)} claims")

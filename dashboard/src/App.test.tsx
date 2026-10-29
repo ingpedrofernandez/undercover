@@ -117,9 +117,21 @@ it("shows other errors loading a claim", async () => {
 });
 
 it("shows the agent's instructions read only", async () => {
-  stubApi({ "GET /api/instructions": { claim: "# UnderCover Agent" } });
+  stubApi({
+    "GET /api/instructions": {
+      queue: "# Running the queue",
+      claim: "# UnderCover Agent",
+    },
+  });
   renderAt("/instructions");
   expect(await screen.findByText("# UnderCover Agent")).toBeDefined();
+  expect(screen.getByText("# Running the queue")).toBeDefined();
+  expect(
+    screen.getByRole("heading", { name: "Running the queue" }),
+  ).toBeDefined();
+  expect(
+    screen.getByRole("heading", { name: "Working a claim" }),
+  ).toBeDefined();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
 });
