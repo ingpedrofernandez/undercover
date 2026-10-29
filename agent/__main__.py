@@ -5,14 +5,8 @@ import sys
 from io import TextIOWrapper
 from typing import cast
 
-from agent.main import call_backend, work_claim
-from agent.queue import run_queue
-
-
-def waiting() -> int:
-    """Count the claims waiting in the queue."""
-    claims = call_backend("GET", "/api/claims")
-    return sum(claim["status"] == "waiting" for claim in claims)
+from agent import api
+from agent.work import run_queue, work_claim
 
 
 def main(args: list[str]) -> None:
@@ -24,9 +18,13 @@ def main(args: list[str]) -> None:
     parser.add_argument("--limit", type=int, help="the most claims the run takes on")
     options = parser.parse_args(args)
     if options.claim_id:
-        print(work_claim(options.claim_id))
+        try:
+            print(work_claim(options.claim_id))
+        except api.ApiError as error:
+            print(f"{options.claim_id}  not started: {error}")
         return
-    limit = options.limit or waiting()
+    waiting = sum(claim["status"] == "waiting" for claim in api.list_claims())
+    limit = options.limit or waiting
     if limit == 0:
         print("No claims are waiting.")
         return

@@ -4,12 +4,13 @@ import time
 from contextlib import closing
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import __main__ as cli
-from agent import main
-from agent.queue import QueueRun, queue_tools, run_queue
+from agent import work
 from agent.tests.test_agent import StubModel, call
+from agent.tools import QUEUE_TOOLS
+from agent.work import run_queue
 
 THREE = ["CLM-1001", "CLM-1002", "CLM-1003"]
 
@@ -58,11 +59,11 @@ class ClaimAgents:
 @pytest.fixture
 def claim_agents(monkeypatch, client, three_waiting):
     agents = ClaimAgents(client)
-    monkeypatch.setattr(main, "run", agents)
+    monkeypatch.setattr(work, "run_claim_agent", agents)
     return agents
 
 
-def work(*claim_ids):
+def asks_for(*claim_ids):
     return [call("work_claim", claim_id=claim_id) for claim_id in claim_ids]
 
 
@@ -80,13 +81,13 @@ def test_queue_tools_are_named_after_backend_operations(client):
         for path in client.get("/openapi.json").json()["paths"].values()
         for operation in path.values()
     }
-    names = [t.name for t in queue_tools(QueueRun(1, 5, None))]
+    names = [t.name for t in QUEUE_TOOLS]
     assert names == ["list_claims", "write_todos", "work_claim"]
     assert set(names[:2]) <= operations
 
 
 def test_the_queue_agent_gets_its_instructions_and_cap(client, claim_agents):
-    stub = queue_agent(*work(*THREE))
+    stub = queue_agent(*asks_for(*THREE))
     run_queue(3, stub)
     system, task = stub.prompts[0][:2]
     assert isinstance(system, SystemMessage)
@@ -107,11 +108,11 @@ def test_the_to_do_list_is_kept_on_the_run(client, claim_agents, capsys):
     stub = queue_agent(
         call("list_claims"),
         call("write_todos", todos=todos("in_progress", "to_do", "to_do")),
-        *work("CLM-1001"),
+        *asks_for("CLM-1001"),
         call("write_todos", todos=todos("done", "in_progress", "to_do")),
-        *work("CLM-1002"),
+        *asks_for("CLM-1002"),
         call("write_todos", todos=todos("done", "done", "done")),
-        *work("CLM-1003"),
+        *asks_for("CLM-1003"),
     )
     assert run_queue(3, stub) == "The summary."
 
@@ -121,7 +122,7 @@ def test_the_to_do_list_is_kept_on_the_run(client, claim_agents, capsys):
     assert run["summary"] == "The summary."
     assert run["finished_at"]
     assert stub.prompts[2][-1].content == "Saved 3 items."
-    assert '"claim_id":"CLM-1001"' in stub.prompts[1][-1].content
+    assert '"claim_id": "CLM-1001"' in stub.prompts[1][-1].content
     assert capsys.readouterr().out.splitlines() == [
         "Run 1 started, capped at 3 claims",
         "CLM-1001  decline  $0.00",
@@ -133,14 +134,14 @@ def test_the_to_do_list_is_kept_on_the_run(client, claim_agents, capsys):
 def test_a_refused_to_do_list_reaches_the_agent(client, claim_agents):
     stub = queue_agent(
         call("write_todos", todos=[{"content": "", "status": "to_do"}]),
-        *work(*THREE),
+        *asks_for(*THREE),
     )
     run_queue(3, stub)
-    assert stub.prompts[1][-1].text.startswith("Refused with status 422")
+    assert stub.prompts[1][-1].text.startswith("Refused: 422: ")
 
 
 def test_a_run_takes_on_no_more_claims_than_its_cap(client, claim_agents):
-    stub = queue_agent(*work(*THREE))
+    stub = queue_agent(*asks_for(*THREE))
     run_queue(2, stub)
 
     assert claim_agents.worked == ["CLM-1001", "CLM-1002"]
@@ -153,9 +154,21 @@ def test_a_run_takes_on_no_more_claims_than_its_cap(client, claim_agents):
     assert not any(isinstance(m, HumanMessage) for m in stub.prompts[-1][2:])
 
 
+def test_a_claim_that_is_not_waiting_is_refused(client, claim_agents):
+    stub = queue_agent(*asks_for("CLM-1004", *THREE))
+    run_queue(3, stub)
+
+    refusal = stub.prompts[1][-1]
+    assert isinstance(refusal, ToolMessage)
+    assert refusal.text == "Refused: 409: Claim CLM-1004 is not waiting"
+    assert refusal.status == "error"
+    assert claim_agents.worked == THREE
+    assert {statuses(client)[c] for c in THREE} == {"decided"}
+
+
 def test_a_failed_claim_is_tried_again_without_counting_twice(client, claim_agents):
     claim_agents.failures = {"CLM-1001": 1}
-    stub = queue_agent(*work("CLM-1001", "CLM-1002", "CLM-1003", "CLM-1001"))
+    stub = queue_agent(*asks_for("CLM-1001", "CLM-1002", "CLM-1003", "CLM-1001"))
     run_queue(3, stub)
 
     assert claim_agents.worked == ["CLM-1001", "CLM-1002", "CLM-1003", "CLM-1001"]
@@ -167,7 +180,7 @@ def test_a_failed_claim_is_tried_again_without_counting_twice(client, claim_agen
 
 def test_a_claim_that_fails_twice_does_not_stop_the_run(client, claim_agents):
     claim_agents.failures = {"CLM-1001": 2}
-    stub = queue_agent(*work("CLM-1001", "CLM-1002", "CLM-1003", "CLM-1001"))
+    stub = queue_agent(*asks_for("CLM-1001", "CLM-1002", "CLM-1003", "CLM-1001"))
     run_queue(3, stub)
 
     found = statuses(client)
@@ -183,9 +196,9 @@ def test_the_agent_is_sent_back_for_a_missed_claim(client, claim_agents):
     stub = StubModel(
         messages=iter(
             [
-                *work("CLM-1001", "CLM-1002"),
+                *asks_for("CLM-1001", "CLM-1002"),
                 AIMessage(content="All done."),
-                *work("CLM-1003"),
+                *asks_for("CLM-1003"),
                 AIMessage(content="The summary."),
             ]
         )
@@ -214,7 +227,7 @@ def test_claims_asked_for_together_are_worked_one_at_a_time(client, claim_agents
 
 
 def test_a_queue_agent_that_fails_still_finishes_the_run(client, claim_agents):
-    stub = StubModel(messages=iter(work("CLM-1001")), fail_at={1, 2, 3})
+    stub = StubModel(messages=iter(asks_for("CLM-1001")), fail_at={1, 2, 3})
     summary = run_queue(3, stub)
 
     assert summary == "The run stopped early: RuntimeError: The model is unavailable"
