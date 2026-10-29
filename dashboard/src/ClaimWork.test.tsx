@@ -161,6 +161,47 @@ it("shows each kind of step, with results folded", async () => {
   expect(screen.getByText("Approved and paid.")).toBeDefined();
 });
 
+it("lists the sections the agent read, once each, in order", async () => {
+  const read = (step_id: number, title: string): Step => ({
+    step_id,
+    thread_id: "t-1",
+    kind: "read",
+    content: `${title}\n\n## Section text\n\nWhat the section says.`,
+    created_at: decidedAt,
+  });
+  showClaim(approved, [
+    read(1, "Claims manual, section 7: Interpretation notes"),
+    read(2, "Policy wording, section 5: Baggage and Personal Effects"),
+    read(3, "Claims manual, section 7: Interpretation notes"),
+  ]);
+  const heading = await screen.findByRole("heading", {
+    name: "What the agent read",
+  });
+  const panel = heading.closest("section");
+  if (!panel) throw new Error("The heading has no panel");
+  const items = await within(panel).findAllByRole("listitem");
+  expect(items.map((item) => item.textContent)).toEqual([
+    "Claims manual, section 7: Interpretation notes",
+    "Policy wording, section 5: Baggage and Personal Effects",
+  ]);
+
+  const step = screen.getAllByText("Read")[0].closest("details");
+  expect(step?.open).toBe(false);
+  expect(step?.querySelector("summary")?.textContent).toBe(
+    "Read Claims manual, section 7: Interpretation notes",
+  );
+  expect(step?.querySelector("pre")?.textContent).toBe(
+    "## Section text\n\nWhat the section says.",
+  );
+});
+
+it("says when the agent hasn't read anything yet", async () => {
+  showClaim(claim);
+  expect(
+    await screen.findByText(/^Nothing yet\. The sections of the policy/),
+  ).toBeDefined();
+});
+
 it("shows new steps and the decision as the agent works", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const { routes } = showClaim({

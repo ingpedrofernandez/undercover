@@ -52,6 +52,24 @@ test("the claim page shows the agent at work", async ({ page, request }) => {
   await expect(page.getByText("Approved and paid $500.00.")).toBeVisible();
 });
 
+test("the claim page shows what the agent read", async ({ page, request }) => {
+  await page.goto("/claims/CLM-1005");
+  const reads = page.locator("section", {
+    has: page.getByRole("heading", { name: "What the agent read" }),
+  });
+  await expect(reads.getByText(/Nothing yet/)).toBeVisible();
+
+  await send(request, "/api/claims/CLM-1005/start", { thread_id: "e2e-3" });
+  await send(request, "/api/claims/CLM-1005/steps", {
+    kind: "read",
+    content:
+      "Claims manual, section 7: Interpretation notes\n\n## 7. Interpretation notes",
+  });
+  await expect(
+    reads.getByText("Claims manual, section 7: Interpretation notes"),
+  ).toBeVisible();
+});
+
 test("a handler signs off a payout over the limit", async ({
   page,
   request,

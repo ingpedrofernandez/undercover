@@ -2,6 +2,8 @@
 
 import sys
 import uuid
+from io import TextIOWrapper
+from typing import cast
 
 from agent.main import run, work_queue
 
@@ -15,4 +17,7 @@ def main(args: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    # Windows writes piped output in its legacy code page, which can't hold
+    # every character a model replies with.
+    cast(TextIOWrapper, sys.stdout).reconfigure(encoding="utf-8")
     main(sys.argv[1:])

@@ -14,16 +14,16 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import SecretStr
 
-from agent.tools import TOOLS, request
+from agent.tools import REFUSED, TOOLS, request
 
 load_dotenv(override=True)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "openai/gpt-6-luna"
+DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 
 
 def model() -> ChatOpenAI:
-    """Return the model named in MODEL_NAME, or GPT-6 Luna by default."""
+    """Return the model named in MODEL_NAME, or DeepSeek V4.1 Flash by default."""
     name = os.getenv("MODEL_NAME")
     return ChatOpenAI(
         model=name or DEFAULT_MODEL,
@@ -48,6 +48,8 @@ def call_backend(method: str, path: str, body: dict[str, Any] | None = None) -> 
 def steps(message: AnyMessage) -> list[tuple[str, str]]:
     """Turn one message from the agent's run into steps for the dashboard."""
     if isinstance(message, ToolMessage):
+        if message.name == "read_section" and not message.text.startswith(REFUSED):
+            return [("read", message.text)]
         return [("tool_result", f"{message.name}: {message.text}")]
     found = []
     if message.text:
@@ -62,7 +64,7 @@ def steps(message: AnyMessage) -> list[tuple[str, str]]:
 def run(claim_id: str, thread_id: str, llm: BaseChatModel | None = None) -> str:
     """Work one claim, recording each step with the backend, and return the reply."""
     call_backend("POST", f"/api/claims/{claim_id}/start", {"thread_id": thread_id})
-    instructions = call_backend("GET", "/api/instructions")["text"]
+    instructions = call_backend("GET", "/api/instructions")["claim"]
     agent = create_agent(
         llm or model(),
         tools=TOOLS,

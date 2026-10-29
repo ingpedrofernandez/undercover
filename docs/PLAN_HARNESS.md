@@ -164,19 +164,19 @@ Seed the `sections` table from both documents and add `list_sections`, `search_d
 
 Give the claim agent `list_sections`, `search_documents` and `read_section`. Rewrite its instructions as `backend/instructions/claim.md`, written from the wording and the manual, and serve them without the policy wording: `get_instructions` returns `{claim}`, and the wording leaves the settings table. Record reads as `read` steps and show them on the claim page. Make DeepSeek V4.1 Flash the default model. Update `docs/SPEC.md` for the manual and `docs/TECH_STACK.md` for the model.
 
-- [ ] A pytest test checks the claim agent's tools are exactly `get_claim`, `get_policy`, `get_claim_history`, `list_sections`, `search_documents`, `read_section`, `record_decision` and `pay_claim`, each named after a backend operation
-- [ ] Stub model test: the system prompt is the `claim` text from `get_instructions`, and it contains neither "## 10. How we work out your payment" nor "$35 per traveler"
-- [ ] Stub model test: the stub calls `search_documents` (monkey), `read_section` (claims_manual, 7), then decides. The steps hold the search as a tool call and result, then a `read` step whose first line is `Claims manual, section 7: Interpretation notes` and no separate tool result for that read
-- [ ] Stub model test: `read_section` for section 99 reaches the model as a refusal and is recorded as a `tool_result`, not a `read`
-- [ ] The model test checks the default is `deepseek/deepseek-v4.1-flash` with low reasoning effort, and that `MODEL_NAME` overrides it
-- [ ] vitest covers `read` steps folded to their first line, and "What the agent read" listing each section once, in the order read
-- [ ] e2e: the test starts `CLM-1005` and records a `read` step through the API. Without a reload, the claim page shows the section under "What the agent read"
-- [ ] e2e: the instructions page shows "You are the UnderCover Agent" and no longer shows the policy wording
-- [ ] Live: on a fresh database with `npm run dev` running, `uv run -m agent CLM-1020` (sunglasses taken by a monkey) prints a reply
-- [ ] Live: `curl -s localhost:8000/api/claims/CLM-1020/steps` shows at least one `list_sections` or `search_documents` call and a `read` step for `Claims manual, section 7`, and the claim has a decision with a section and a reason
-- [ ] Live, in the browser: `/claims/CLM-1020` shows the sections under "What the agent read"
-- [ ] `docs/SPEC.md` no longer lists the claims manual under "Not for now", and `docs/TECH_STACK.md` names DeepSeek V4.1 Flash
-- [ ] `npm run check` passes
+- [x] A pytest test checks the claim agent's tools are exactly `get_claim`, `get_policy`, `get_claim_history`, `list_sections`, `search_documents`, `read_section`, `record_decision` and `pay_claim`, each named after a backend operation
+- [x] Stub model test: the system prompt is the `claim` text from `get_instructions`, and it contains neither "## 10. How we work out your payment" nor "$35 per traveler"
+- [x] Stub model test: the stub calls `search_documents` (monkey), `read_section` (claims_manual, 7), then decides. The steps hold the search as a tool call and result, then a `read` step whose first line is `Claims manual, section 7: Interpretation notes` and no separate tool result for that read
+- [x] Stub model test: `read_section` for section 99 reaches the model as a refusal and is recorded as a `tool_result`, not a `read`
+- [x] The model test checks the default is `deepseek/deepseek-v4.1-flash` with low reasoning effort, and that `MODEL_NAME` overrides it
+- [x] vitest covers `read` steps folded to their first line, and "What the agent read" listing each section once, in the order read
+- [x] e2e: the test starts `CLM-1005` and records a `read` step through the API. Without a reload, the claim page shows the section under "What the agent read"
+- [x] e2e: the instructions page shows "You are the UnderCover Agent" and no longer shows the policy wording
+- [x] Live: on a fresh database with `npm run dev` running, `uv run -m agent CLM-1020` (sunglasses taken by a monkey) prints a reply
+- [x] Live: `curl -s localhost:8000/api/claims/CLM-1020/steps` shows at least one `list_sections` or `search_documents` call and a `read` step for `Claims manual, section 7`, and the claim has a decision with a section and a reason
+- [x] Live, in the browser: `/claims/CLM-1020` shows the sections under "What the agent read"
+- [x] `docs/SPEC.md` no longer lists the claims manual under "Not for now", and `docs/TECH_STACK.md` names DeepSeek V4.1 Flash
+- [x] `npm run check` passes
 
 ## Phase 3: A failed claim is put right
 

@@ -469,6 +469,13 @@ p {
   font-size: 0.8rem;
 }
 
+.reads {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: 4px;
+}
+
 .step details[open] summary code {
   display: none;
 }

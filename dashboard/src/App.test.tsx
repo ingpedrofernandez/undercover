@@ -106,7 +106,7 @@ it("shows other errors loading a claim", async () => {
 });
 
 it("shows the agent's instructions read only", async () => {
-  stubApi({ "GET /api/instructions": { text: "# UnderCover Agent" } });
+  stubApi({ "GET /api/instructions": { claim: "# UnderCover Agent" } });
   renderAt("/instructions");
   expect(await screen.findByText("# UnderCover Agent")).toBeDefined();
   expect(screen.queryByRole("textbox")).toBeNull();

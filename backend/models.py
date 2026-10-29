@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 Status = Literal["waiting", "in_progress", "waiting_for_sign_off", "decided"]
 DecisionKind = Literal["approve", "decline", "refer"]
-StepKind = Literal["tool_call", "tool_result", "message"]
+StepKind = Literal["tool_call", "tool_result", "message", "read"]
 
 
 class Item(BaseModel):
@@ -112,7 +112,7 @@ class Step(BaseModel):
 
 
 class Instructions(BaseModel):
-    text: str
+    claim: str
 
 
 class SectionTitle(BaseModel):

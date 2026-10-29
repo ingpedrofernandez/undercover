@@ -59,6 +59,9 @@ def test_tools_are_named_after_backend_operations(client):
         "get_claim",
         "get_policy",
         "get_claim_history",
+        "list_sections",
+        "search_documents",
+        "read_section",
         "record_decision",
         "pay_claim",
     ]
@@ -66,9 +69,10 @@ def test_tools_are_named_after_backend_operations(client):
 
 
 def test_get_instructions(client):
-    text = client.get("/api/instructions").json()["text"]
+    text = client.get("/api/instructions").json()["claim"]
     assert text.startswith("# UnderCover Agent")
-    assert "## 10. How we work out your payment" in text
+    assert "## 10. How we work out your payment" not in text
+    assert "$35 per traveler" not in text
 
 
 def test_run_approves_and_pays_within_the_limit(client):
@@ -109,7 +113,7 @@ def test_run_uses_the_instructions_from_the_backend(client):
     main.run("CLM-1003", "thread-1", stub)
     system = stub.prompts[0][0]
     assert isinstance(system, SystemMessage)
-    assert system.content == client.get("/api/instructions").json()["text"]
+    assert system.content == client.get("/api/instructions").json()["claim"]
 
 
 def test_payment_over_the_limit_is_refused(client):
@@ -168,6 +172,64 @@ def test_command_line(monkeypatch, capsys):
 def test_model_name(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("MODEL_NAME", raising=False)
-    assert main.model().model_name == "openai/gpt-6-luna"
+    assert main.model().model_name == "deepseek/deepseek-v4.1-flash"
+    assert main.model().reasoning_effort == "low"
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
     assert main.model().model_name == "openrouter/free"
+    assert main.model().reasoning_effort is None
+
+
+def look_up_then_refer(*lookups):
+    return StubModel(
+        messages=iter(
+            [
+                *lookups,
+                call(
+                    "record_decision",
+                    claim_id="CLM-1020",
+                    decision="refer",
+                    payout=0,
+                    section="Claims manual, section 7, Interpretation notes",
+                    reason="A person should look at this.",
+                ),
+                AIMessage(content="Decision: refer."),
+            ]
+        )
+    )
+
+
+def test_reading_a_section_is_recorded_as_a_read(client):
+    stub = look_up_then_refer(
+        call("search_documents", query="monkey"),
+        call("read_section", document="claims_manual", section=7),
+        call("list_sections", document="claims_manual"),
+    )
+    main.run("CLM-1020", "thread-5", stub)
+
+    steps = client.get("/api/claims/CLM-1020/steps").json()
+    assert [s["kind"] for s in steps[:3]] == ["tool_call", "tool_result", "tool_call"]
+    assert steps[0]["content"] == 'search_documents(query="monkey")'
+    assert '"section":7' in steps[1]["content"]
+    assert steps[2]["content"] == 'read_section(document="claims_manual", section=7)'
+    assert steps[3]["kind"] == "read"
+    title, _, text = steps[3]["content"].partition("\n\n")
+    assert title == "Claims manual, section 7: Interpretation notes"
+    assert text.startswith("## 7. Interpretation notes")
+    assert "**Wild animals.**" in text
+    assert steps[4]["content"] == 'list_sections(document="claims_manual")'
+    assert '"title":"Repeat claims"' in steps[5]["content"]
+
+
+def test_a_refused_read_is_an_ordinary_tool_result(client):
+    stub = look_up_then_refer(
+        call("read_section", document="claims_manual", section=99)
+    )
+    main.run("CLM-1020", "thread-6", stub)
+
+    refusal = stub.prompts[1][-1]
+    assert isinstance(refusal, ToolMessage)
+    assert refusal.text.startswith("Refused with status 404")
+    steps = client.get("/api/claims/CLM-1020/steps").json()
+    assert steps[1]["kind"] == "tool_result"
+    assert steps[1]["content"].startswith("read_section: Refused with status 404")
+    assert "read" not in {s["kind"] for s in steps}
