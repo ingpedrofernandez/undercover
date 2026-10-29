@@ -15,6 +15,7 @@ The pre-commit hook runs the format, lint, type and unit test checks on every co
 When asked to plan, as in "Please plan the pilot", write the plan to `docs/PLAN.md` and write no code.
 
 - Split the work into phases, usually 5 or 6, each building on the last.
+- In the design, name each module the work adds or changes, its one job and what it imports, and check them against `docs/CODE_STANDARDS.md`. Where the existing code falls short of the standards, plan to fix it before building on it.
 - Give each phase detailed success criteria that you can verify yourself: tests that pass, commands and their output, API calls and their responses, and pages you check in the browser with the Playwright MCP server. Write each one as a checkbox.
 - Then stop and wait until you are asked to implement the plan.
 
@@ -24,15 +25,20 @@ When asked to implement the plan, as in "Please implement the plan for the pilot
 
 1. Build it, with tests.
 2. Check every success criterion and fix whatever fails.
-3. Tick off its criteria in `docs/PLAN.md` and update `docs/STATUS.md`.
-4. Commit. The pre-commit hook runs the checks; if it fails, fix the problem and commit again.
+3. Review the phase's diff as a reviewer would, against every point in `docs/CODE_STANDARDS.md`, and fix what falls short. Green checks are not a review. At least:
+   - `grep` for API paths and base URLs outside the API clients, and find none
+   - each module still has one job, and no module reaches into another
+   - there is one way to do each thing, such as calling the backend
+   - agent instructions state a goal, not a script
+4. Tick off its criteria in `docs/PLAN.md` and update `docs/STATUS.md`.
+5. Commit. The pre-commit hook runs the checks; if it fails, fix the problem and commit again.
 
 When the last phase is done, run `npm run check` and report the results.
 
 ## Rules
 
 - Add tests with each change. Tests never call a model; use a stub model.
-- Outside a plan, commit each change once you have checked it.
+- Outside a plan, commit each change once you have checked it and reviewed it against `docs/CODE_STANDARDS.md`.
 - Run `npm run check` before you hand work over.
 - Never use `git commit --no-verify`.
 - Never lower a threshold, turn off a rule or exclude a file to get a green run. If a rule looks wrong, stop and ask.
