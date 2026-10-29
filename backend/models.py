@@ -115,6 +115,20 @@ class Instructions(BaseModel):
     text: str
 
 
+class SectionTitle(BaseModel):
+    document: str
+    section: int
+    title: str
+
+
+class Section(SectionTitle):
+    text: str
+
+
+class SearchResult(SectionTitle):
+    lines: list[str]
+
+
 class StartRequest(BaseModel):
     thread_id: str = Field(min_length=1)
 

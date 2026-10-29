@@ -2,15 +2,15 @@
 
 import json
 import sqlite3
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, closing
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 
-from backend.database import connect, database_path, seed
+from backend import documents
+from backend.database import Database, database_path, seed
 from backend.models import (
     Claim,
     ClaimSummary,
@@ -40,15 +40,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="UnderCover", lifespan=lifespan)
-
-
-def database() -> Iterator[sqlite3.Connection]:
-    """Open the database for one request and commit if the request succeeds."""
-    with closing(connect()) as connection, connection:
-        yield connection
-
-
-Database = Annotated[sqlite3.Connection, Depends(database)]
+app.include_router(documents.router)
 
 
 def now() -> str:

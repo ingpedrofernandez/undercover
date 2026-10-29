@@ -3,12 +3,16 @@
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
+
+from fastapi import Depends
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
+DOCUMENTS = {"policy_wording": "policy_wording.md", "claims_manual": "claims_manual.md"}
 
 SCHEMA = """
 CREATE TABLE settings (
@@ -59,6 +63,13 @@ CREATE TABLE steps (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE sections (
+    document TEXT NOT NULL,
+    section INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL,
+    PRIMARY KEY (document, section)
+);
 CREATE VIEW claim_view AS
 SELECT
     claims.claim_id, claims.record, claims.status, claims.thread_id,
@@ -85,9 +96,28 @@ def connect() -> sqlite3.Connection:
     return connection
 
 
+def database() -> Iterator[sqlite3.Connection]:
+    """Open the database for one request and commit if the request succeeds."""
+    with closing(connect()) as connection, connection:
+        yield connection
+
+
+Database = Annotated[sqlite3.Connection, Depends(database)]
+
+
 def load(name: str) -> Any:
     """Read one of the JSON files in data/."""
     return json.loads((DATA / name).read_text(encoding="utf-8"))
+
+
+def split_sections(text: str) -> list[tuple[int, str, str]]:
+    """Split a document into numbered sections; the lines before section 1 are 0."""
+    intro, *parts = text.split("\n## ")
+    found = [(0, intro.splitlines()[0].removeprefix("# "), intro.strip())]
+    for part in parts:
+        number, _, title = part.splitlines()[0].partition(". ")
+        found.append((int(number), title, f"## {part.strip()}"))
+    return found
 
 
 def seed(path: Path) -> dict[str, int]:
@@ -124,6 +154,12 @@ def seed(path: Path) -> dict[str, int]:
             "INSERT INTO claims VALUES (?, ?, ?, 'waiting', NULL)",
             [(c["claim_id"], c["customer_id"], json.dumps(c)) for c in claims],
         )
+        for document, name in DOCUMENTS.items():
+            text = (DATA / name).read_text(encoding="utf-8")
+            connection.executemany(
+                "INSERT INTO sections VALUES (?, ?, ?, ?)",
+                [(document, *section) for section in split_sections(text)],
+            )
     return {
         "claims": len(claims),
         "policies": len(policies),
