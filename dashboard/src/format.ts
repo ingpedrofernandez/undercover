@@ -65,3 +65,7 @@ const addOnNames: Record<string, string> = {
 export function addOnName(code: string): string {
   return addOnNames[code] ?? label(code);
 }
+
+export function firstLine(text: string): string {
+  return text.split("\n", 1)[0];
+}

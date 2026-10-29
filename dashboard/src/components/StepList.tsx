@@ -1,66 +1,33 @@
-import { useCallback } from "react";
-import { api, type Step } from "../api";
-import { time } from "../format";
-import { REFRESH_MS, useLoad } from "../useLoad";
+import type { Step } from "../api";
+import { firstLine, time } from "../format";
 import { Message } from "./Message";
 
 const SUMMARY_LENGTH = 90;
 
-// A read step's first line names the section, and the section's text follows.
-function firstLine(step: Step): string {
-  return step.content.split("\n", 1)[0];
-}
-
-export function StepList({ claimId }: Readonly<{ claimId: string }>) {
-  const load = useCallback(() => api.listSteps(claimId), [claimId]);
-  const { data: steps, error } = useLoad(load, REFRESH_MS);
-
+export function StepList({
+  steps,
+  error,
+}: Readonly<{ steps?: Step[]; error?: Error }>) {
   return (
-    <>
-      <ReadList steps={steps ?? []} />
-      <section className="panel" aria-labelledby="steps-title">
-        <h2 id="steps-title">Agent at work</h2>
-        {!steps && <Message error={error} />}
-        {steps?.length === 0 && (
-          <p className="muted">
-            No steps yet. They appear here as the agent works.
-          </p>
-        )}
-        {steps && steps.length > 0 && (
-          <ol className="steps">
-            {steps.map((step) => (
-              <li key={step.step_id} className={`step step-${step.kind}`}>
-                <span className="step-time small muted">
-                  {time(step.created_at)}
-                </span>
-                <StepBody step={step} />
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-    </>
-  );
-}
-
-function ReadList({ steps }: Readonly<{ steps: Step[] }>) {
-  const sections = [
-    ...new Set(steps.filter((s) => s.kind === "read").map(firstLine)),
-  ];
-  return (
-    <section className="panel" aria-labelledby="reads-title">
-      <h2 id="reads-title">What the agent read</h2>
-      {sections.length === 0 ? (
+    <section className="panel" aria-labelledby="steps-title">
+      <h2 id="steps-title">Agent at work</h2>
+      {!steps && <Message error={error} />}
+      {steps?.length === 0 && (
         <p className="muted">
-          Nothing yet. The sections of the policy wording and the claims manual
-          the agent reads appear here.
+          No steps yet. They appear here as the agent works.
         </p>
-      ) : (
-        <ul className="reads">
-          {sections.map((section) => (
-            <li key={section}>{section}</li>
+      )}
+      {steps && steps.length > 0 && (
+        <ol className="steps">
+          {steps.map((step) => (
+            <li key={step.step_id} className={`step step-${step.kind}`}>
+              <span className="step-time small muted">
+                {time(step.created_at)}
+              </span>
+              <StepBody step={step} />
+            </li>
           ))}
-        </ul>
+        </ol>
       )}
     </section>
   );
@@ -90,7 +57,7 @@ function StepBody({ step }: Readonly<{ step: Step }>) {
     );
   }
   if (step.kind === "read") {
-    const title = firstLine(step);
+    const title = firstLine(step.content);
     return (
       <details>
         <summary>

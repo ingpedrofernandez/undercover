@@ -5,6 +5,7 @@ import { StatusChip } from "../components/Chips";
 import { DecisionPanel } from "../components/DecisionPanel";
 import { Message } from "../components/Message";
 import { HistoryPanel, PolicyPanel } from "../components/PolicyPanels";
+import { ReadList } from "../components/ReadList";
 import { StepList } from "../components/StepList";
 import { date, label, money } from "../format";
 import { REFRESH_MS, useLoad } from "../useLoad";
@@ -35,11 +36,22 @@ export function ClaimPage() {
         </div>
         <div className="column">
           <DecisionPanel claim={claim} onSignedOff={reload} />
-          <StepList claimId={claim.claim_id} />
+          <AgentWork claimId={claim.claim_id} />
           <PolicyPanel policyId={claim.policy_id} />
           <HistoryPanel customerId={claim.customer_id} />
         </div>
       </div>
+    </>
+  );
+}
+
+function AgentWork({ claimId }: Readonly<{ claimId: string }>) {
+  const load = useCallback(() => api.listSteps(claimId), [claimId]);
+  const { data: steps, error } = useLoad(load, REFRESH_MS);
+  return (
+    <>
+      <ReadList steps={steps ?? []} />
+      <StepList steps={steps} error={error} />
     </>
   );
 }

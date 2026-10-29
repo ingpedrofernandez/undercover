@@ -1,12 +1,13 @@
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  payClaim,
+  recordDecision,
+  recordFailure,
+  recordStep,
+  startClaim,
+} from "./api";
 
-// These tests stand in for the agent by calling the API through the
-// dashboard's proxy, and watch the claim page update without a reload.
-
-async function send(request: APIRequestContext, path: string, data: object) {
-  const response = await request.post(path, { data });
-  expect(response.ok()).toBe(true);
-}
+// These tests watch the claim page update without a reload.
 
 test("the claim page shows the agent at work", async ({ page, request }) => {
   await page.goto("/claims/CLM-1003");
@@ -14,15 +15,19 @@ test("the claim page shows the agent at work", async ({ page, request }) => {
   await expect(heading.getByText("Waiting")).toBeVisible();
   await expect(page.getByText(/No steps yet/)).toBeVisible();
 
-  await send(request, "/api/claims/CLM-1003/start", { thread_id: "e2e-1" });
-  await send(request, "/api/claims/CLM-1003/steps", {
-    kind: "tool_call",
-    content: 'get_claim(claim_id="CLM-1003")',
-  });
-  await send(request, "/api/claims/CLM-1003/steps", {
-    kind: "tool_result",
-    content: 'get_claim: {"claim_id":"CLM-1003"}',
-  });
+  await startClaim(request, "CLM-1003", "e2e-1");
+  await recordStep(
+    request,
+    "CLM-1003",
+    "tool_call",
+    'get_claim(claim_id="CLM-1003")',
+  );
+  await recordStep(
+    request,
+    "CLM-1003",
+    "tool_result",
+    'get_claim: {"claim_id":"CLM-1003"}',
+  );
   await expect(heading.getByText("In progress")).toBeVisible();
   await expect(
     page.getByText("The agent is working on this claim."),
@@ -32,17 +37,19 @@ test("the claim page shows the agent at work", async ({ page, request }) => {
     page.getByText('get_claim: {"claim_id":"CLM-1003"}').first(),
   ).toBeVisible();
 
-  await send(request, "/api/claims/CLM-1003/decision", {
+  await recordDecision(request, "CLM-1003", {
     decision: "approve",
     payout: 500,
     section: "Section 7, Emergency Medical",
     reason: "The treatment was necessary and covered.",
   });
-  await send(request, "/api/claims/CLM-1003/payment", { amount: 500 });
-  await send(request, "/api/claims/CLM-1003/steps", {
-    kind: "message",
-    content: "Approved and paid $500.00.",
-  });
+  expect((await payClaim(request, "CLM-1003", 500)).ok()).toBe(true);
+  await recordStep(
+    request,
+    "CLM-1003",
+    "message",
+    "Approved and paid $500.00.",
+  );
   await expect(heading.getByText("Decided")).toBeVisible();
   const decision = page.locator("section", {
     has: page.getByRole("heading", { name: "Decision" }),
@@ -59,12 +66,13 @@ test("the claim page shows what the agent read", async ({ page, request }) => {
   });
   await expect(reads.getByText(/Nothing yet/)).toBeVisible();
 
-  await send(request, "/api/claims/CLM-1005/start", { thread_id: "e2e-3" });
-  await send(request, "/api/claims/CLM-1005/steps", {
-    kind: "read",
-    content:
-      "Claims manual, section 7: Interpretation notes\n\n## 7. Interpretation notes",
-  });
+  await startClaim(request, "CLM-1005", "e2e-3");
+  await recordStep(
+    request,
+    "CLM-1005",
+    "read",
+    "Claims manual, section 7: Interpretation notes\n\n## 7. Interpretation notes",
+  );
   await expect(
     reads.getByText("Claims manual, section 7: Interpretation notes"),
   ).toBeVisible();
@@ -82,8 +90,8 @@ test("a claim that fails twice is left for a handler", async ({
     ["e2e-4", "The model timed out"],
     ["e2e-5", "The model is unavailable"],
   ]) {
-    await send(request, "/api/claims/CLM-1015/start", { thread_id: thread });
-    await send(request, "/api/claims/CLM-1015/failure", { reason });
+    await startClaim(request, "CLM-1015", thread);
+    await recordFailure(request, "CLM-1015", reason);
   }
   await expect(heading.getByText("Left for a handler")).toBeVisible();
   await expect(
@@ -98,17 +106,14 @@ test("a handler signs off a payout over the limit", async ({
   page,
   request,
 }) => {
-  await send(request, "/api/claims/CLM-1020/start", { thread_id: "e2e-2" });
-  await send(request, "/api/claims/CLM-1020/decision", {
+  await startClaim(request, "CLM-1020", "e2e-2");
+  await recordDecision(request, "CLM-1020", {
     decision: "approve",
     payout: 1350,
     section: "Section 5, Baggage and Personal Effects",
     reason: "The loss is covered.",
   });
-  const refused = await request.post("/api/claims/CLM-1020/payment", {
-    data: { amount: 1350 },
-  });
-  expect(refused.status()).toBe(403);
+  expect((await payClaim(request, "CLM-1020", 1350)).status()).toBe(403);
 
   await page.goto("/claims/CLM-1020");
   await expect(

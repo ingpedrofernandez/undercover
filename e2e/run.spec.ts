@@ -1,22 +1,15 @@
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { finishRun, startRun, writeTodos } from "./api";
 
-// This test stands in for the queue agent by calling the API through the
-// dashboard's proxy. It is the only test that starts runs.
-
-async function call(
-  request: APIRequestContext,
-  method: "post" | "put",
-  path: string,
-  data: object,
-) {
-  const response = await request[method](path, { data });
-  expect(response.ok()).toBe(true);
-}
+// This is the only test that starts runs.
 
 const todos = (statuses: string[]) =>
   ["Work CLM-1006", "Work CLM-1007", "Write the summary"].map(
     (content, index) => ({ content, status: statuses[index] }),
   );
+
+const summary =
+  "Decided CLM-1006. CLM-1007 failed twice and is left for a handler.";
 
 test("the queue page shows the agent's to-do list", async ({
   page,
@@ -30,10 +23,8 @@ test("the queue page shows the agent's to-do list", async ({
     panel.getByText("The agent hasn't worked the queue yet."),
   ).toBeVisible();
 
-  await call(request, "post", "/api/runs", { limit: 2 });
-  await call(request, "put", "/api/runs/1/todos", {
-    todos: todos(["in_progress", "to_do", "to_do"]),
-  });
+  const runId = await startRun(request, 2);
+  await writeTodos(request, runId, todos(["in_progress", "to_do", "to_do"]));
   await expect(
     panel.getByText(/capped at 2 claims\. Running now\./),
   ).toBeVisible();
@@ -44,26 +35,19 @@ test("the queue page shows the agent's to-do list", async ({
     "To doWrite the summary",
   ]);
 
-  await call(request, "put", "/api/runs/1/todos", {
-    todos: todos(["done", "left_for_handler", "in_progress"]),
-  });
+  await writeTodos(
+    request,
+    runId,
+    todos(["done", "left_for_handler", "in_progress"]),
+  );
   await expect(items).toHaveText([
     "DoneWork CLM-1006",
     "Left for a handlerWork CLM-1007",
     "In progressWrite the summary",
   ]);
 
-  await call(request, "put", "/api/runs/1/todos", {
-    todos: todos(["done", "left_for_handler", "done"]),
-  });
-  await call(request, "post", "/api/runs/1/finish", {
-    summary:
-      "Decided CLM-1006. CLM-1007 failed twice and is left for a handler.",
-  });
-  await expect(
-    panel.getByText(
-      "Decided CLM-1006. CLM-1007 failed twice and is left for a handler.",
-    ),
-  ).toBeVisible();
+  await writeTodos(request, runId, todos(["done", "left_for_handler", "done"]));
+  await finishRun(request, runId, summary);
+  await expect(panel.getByText(summary)).toBeVisible();
   await expect(panel.getByText(/Finished at/)).toBeVisible();
 });

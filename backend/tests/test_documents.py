@@ -1,4 +1,4 @@
-from backend.database import split_sections
+from backend.seed import split_sections
 
 
 def test_split_sections():

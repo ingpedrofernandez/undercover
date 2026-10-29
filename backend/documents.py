@@ -1,16 +1,28 @@
-"""The policy wording and the claims manual, section by section."""
+"""What the agent reads: its instructions, and the wording and manual by section."""
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.database import Database
-from backend.models import SearchResult, Section, SectionTitle
+from backend.models import Instructions, SearchResult, Section, SectionTitle
 
-router = APIRouter(prefix="/api/documents")
+INSTRUCTIONS = Path(__file__).parent / "instructions"
+
+router = APIRouter(prefix="/api")
 
 
-@router.get("/search", operation_id="search_documents")
+@router.get("/instructions", operation_id="get_instructions")
+def get_instructions() -> Instructions:
+    """Get the agent's instructions for running the queue and for working a claim."""
+    return Instructions(
+        queue=(INSTRUCTIONS / "queue.md").read_text(encoding="utf-8"),
+        claim=(INSTRUCTIONS / "claim.md").read_text(encoding="utf-8"),
+    )
+
+
+@router.get("/documents/search", operation_id="search_documents")
 def search_documents(
     query: Annotated[str, Query(min_length=1)], db: Database
 ) -> list[SearchResult]:
@@ -31,7 +43,7 @@ def search_documents(
     return results
 
 
-@router.get("/{document}/sections", operation_id="list_sections")
+@router.get("/documents/{document}/sections", operation_id="list_sections")
 def list_sections(document: str, db: Database) -> list[SectionTitle]:
     """List the sections of the policy wording or the claims manual."""
     rows = db.execute(
@@ -44,7 +56,7 @@ def list_sections(document: str, db: Database) -> list[SectionTitle]:
     return [SectionTitle(**dict(row)) for row in rows]
 
 
-@router.get("/{document}/sections/{section}", operation_id="read_section")
+@router.get("/documents/{document}/sections/{section}", operation_id="read_section")
 def read_section(document: str, section: int, db: Database) -> Section:
     """Read one section of the policy wording or the claims manual."""
     row = db.execute(
