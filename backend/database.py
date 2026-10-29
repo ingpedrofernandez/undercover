@@ -5,6 +5,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -63,6 +64,14 @@ CREATE TABLE steps (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE runs (
+    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_limit INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    summary TEXT,
+    todos TEXT NOT NULL DEFAULT '[]'
+);
 CREATE TABLE sections (
     document TEXT NOT NULL,
     section INTEGER NOT NULL,
@@ -103,6 +112,11 @@ def database() -> Iterator[sqlite3.Connection]:
 
 
 Database = Annotated[sqlite3.Connection, Depends(database)]
+
+
+def now() -> str:
+    """Return the current time in UTC, to the second."""
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def load(name: str) -> Any:

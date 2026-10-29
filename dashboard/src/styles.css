@@ -174,12 +174,14 @@ p {
 }
 
 .status-decided,
-.decision-approve {
+.decision-approve,
+.todo-done {
   background: var(--sea-green);
 }
 
 .status-in_progress,
-.decision-refer {
+.decision-refer,
+.todo-in_progress {
   background: var(--marigold);
 }
 
@@ -188,14 +190,45 @@ p {
   background: var(--coral);
 }
 
-.status-waiting {
+.status-waiting,
+.todo-to_do {
   background: var(--cerulean);
   color: #ffffff;
 }
 
-.status-left_for_handler {
+.status-left_for_handler,
+.todo-left_for_handler {
   background: var(--raspberry);
   color: #ffffff;
+}
+
+.run {
+  margin-bottom: 20px;
+}
+
+.todos {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.todo {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.todo .chip {
+  flex: none;
+  min-width: 11em;
+  text-align: center;
+}
+
+.summary {
+  white-space: pre-wrap;
+  max-width: 75ch;
 }
 
 .tiles {

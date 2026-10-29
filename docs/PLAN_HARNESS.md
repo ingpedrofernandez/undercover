@@ -201,14 +201,14 @@ Add `record_failure`, the `left_for_handler` state and `error` steps. Build `wor
 
 Add the `runs` table, `start_run`, `write_todos`, `finish_run` and `get_latest_run`, and the to-do list panel on the queue page. Built before the queue agent so the dashboard can be checked by driving the API by hand.
 
-- [ ] pytest covers every run rule in the design, including each 404, 409 and 422
-- [ ] Walked through with curl on a fresh database: `get_latest_run` returns `null`. `start_run` with limit 5 returns run 1 with no to-do items and no finish time. `write_todos` with three items returns them in order. `finish_run` sets the finish time and summary. `write_todos` afterwards returns 409. A second `start_run` becomes the latest run
-- [ ] The OpenAPI test passes with the new operations
-- [ ] vitest covers the panel with no run, a running run and a finished run with its summary, and the list updating on refresh (with fake timers)
-- [ ] e2e: the queue page is open before the test starts a run through the API. Without a reload, the page shows the to-do items, then shows them ticked off as the test updates them, then shows the summary when the test finishes the run
-- [ ] Browser, with `browser_evaluate`: each to-do status has the color from the design
-- [ ] Browser: screenshots of the queue page in light and dark mode show the panel rounded with no outline, and `browser_console_messages` shows no errors
-- [ ] `npm run check` passes
+- [x] pytest covers every run rule in the design, including each 404, 409 and 422
+- [x] Walked through with curl on a fresh database: `get_latest_run` returns `null`. `start_run` with limit 5 returns run 1 with no to-do items and no finish time. `write_todos` with three items returns them in order. `finish_run` sets the finish time and summary. `write_todos` afterwards returns 409. A second `start_run` becomes the latest run
+- [x] The OpenAPI test passes with the new operations
+- [x] vitest covers the panel with no run, a running run and a finished run with its summary, and the list updating on refresh (with fake timers)
+- [x] e2e: the queue page is open before the test starts a run through the API. Without a reload, the page shows the to-do items, then shows them ticked off as the test updates them, then shows the summary when the test finishes the run
+- [x] Browser, with `browser_evaluate`: each to-do status has the color from the design
+- [x] Browser: screenshots of the queue page in light and dark mode show the panel rounded with no outline, and `browser_console_messages` shows no errors
+- [x] `npm run check` passes
 
 ## Phase 5: The agent runs the queue
 

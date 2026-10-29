@@ -112,6 +112,22 @@ export interface Instructions {
   claim: string;
 }
 
+export type TodoStatus = "to_do" | "in_progress" | "done" | "left_for_handler";
+
+export interface Todo {
+  content: string;
+  status: TodoStatus;
+}
+
+export interface Run {
+  run_id: number;
+  limit: number;
+  started_at: string;
+  finished_at: string | null;
+  summary: string | null;
+  todos: Todo[];
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -156,6 +172,7 @@ export const api = {
     ),
   getInstructions: () => request<Instructions>("/api/instructions"),
   listHandlers: () => request<Handler[]>("/api/handlers"),
+  getLatestRun: () => request<Run | null>("/api/runs/latest"),
   signOff: (claimId: string, handlerId: string) =>
     post<Claim>(`${claimPath(claimId)}/sign-off`, { handler_id: handlerId }),
 };

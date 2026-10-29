@@ -4,13 +4,12 @@ import json
 import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
-from backend import documents
-from backend.database import Database, database_path, seed
+from backend import documents, runs
+from backend.database import Database, database_path, now, seed
 from backend.models import (
     Claim,
     ClaimSummary,
@@ -43,11 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="UnderCover", lifespan=lifespan)
 app.include_router(documents.router)
-
-
-def now() -> str:
-    """Return the current time in UTC, to the second."""
-    return datetime.now(UTC).isoformat(timespec="seconds")
+app.include_router(runs.router)
 
 
 def dollars(amount: float) -> str:

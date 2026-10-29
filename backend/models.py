@@ -9,6 +9,7 @@ Status = Literal[
 ]
 DecisionKind = Literal["approve", "decline", "refer"]
 StepKind = Literal["tool_call", "tool_result", "message", "read", "error"]
+TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
 
 
 class Item(BaseModel):
@@ -172,3 +173,29 @@ class SignOffRequest(BaseModel):
 
 class FailureRequest(BaseModel):
     reason: str = Field(min_length=1, description="What went wrong")
+
+
+class Todo(BaseModel):
+    content: str = Field(min_length=1)
+    status: TodoStatus
+
+
+class Run(BaseModel):
+    run_id: int
+    limit: int
+    started_at: str
+    finished_at: str | None
+    summary: str | None
+    todos: list[Todo]
+
+
+class RunRequest(BaseModel):
+    limit: int = Field(ge=1, description="The most claims the run may take on")
+
+
+class TodosRequest(BaseModel):
+    todos: list[Todo] = Field(description="The whole to-do list, in order")
+
+
+class FinishRequest(BaseModel):
+    summary: str = Field(min_length=1, description="A short summary for the handlers")
