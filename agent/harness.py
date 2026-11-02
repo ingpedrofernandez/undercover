@@ -4,6 +4,7 @@ import os
 from collections.abc import Callable
 from functools import cache
 from typing import Any
+from uuid import UUID
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
@@ -18,7 +19,9 @@ from langchain.agents.middleware import (
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langchain_core.outputs import LLMResult
 from langchain_deepseek import ChatDeepSeek
+from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -127,14 +130,39 @@ def queue_agent(llm: BaseChatModel | None = None) -> Agent:
     )
 
 
+class Tracing(CallbackHandler):
+    """Langfuse's LangChain handler, which also records what OpenRouter charged."""
+
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        *,
+        run_id: UUID,
+        parent_run_id: UUID | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Put OpenRouter's cost on the model call's generation, then end it.
+
+        The generation is the current observation until Langfuse's handler ends it.
+        """
+        usage = (response.llm_output or {}).get("token_usage", {})
+        if "cost" in usage:
+            get_client().update_current_generation(
+                cost_details={"total": usage["cost"]}
+            )
+        return super().on_llm_end(
+            response, run_id=run_id, parent_run_id=parent_run_id, **kwargs
+        )
+
+
 @cache
-def tracing() -> CallbackHandler:
+def tracing() -> Tracing:
     """Return the one Langfuse handler that traces every agent run.
 
     A claim agent run inside the queue agent's tool call inherits the queue
     agent's handler. Sharing one handler means it is traced once, under that call.
     """
-    return CallbackHandler()
+    return Tracing()
 
 
 def run_agent(
