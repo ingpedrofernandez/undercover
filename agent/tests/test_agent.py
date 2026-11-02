@@ -1,6 +1,7 @@
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from openai.types.chat import ChatCompletion
 
 from agent import __main__ as cli
 from agent import harness, work
@@ -243,3 +244,30 @@ def test_model(monkeypatch):
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
     assert harness.model().model_name == "openrouter/free"
     assert harness.model().reasoning_effort is None
+
+
+def test_model_keeps_the_reasoning_openrouter_sends(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    reply = ChatCompletion.model_validate(
+        {
+            "id": "reply-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "deepseek/deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Approve.",
+                        "reasoning": "The delay was over six hours.",
+                    },
+                }
+            ],
+        }
+    )
+    message = harness.model()._create_chat_result(reply).generations[0].message
+    assert message.additional_kwargs["reasoning_content"] == (
+        "The delay was over six hours."
+    )

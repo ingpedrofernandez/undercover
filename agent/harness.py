@@ -18,7 +18,7 @@ from langchain.agents.middleware import (
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -41,10 +41,14 @@ QUEUE_MODEL_CALLS = 200
 Agent = CompiledStateGraph[Any, Any, Any, Any]
 
 
-def model() -> ChatOpenAI:
-    """Return the model named in MODEL_NAME, or DeepSeek V4.1 Flash by default."""
+def model() -> ChatDeepSeek:
+    """Return the model named in MODEL_NAME, or DeepSeek V4.1 Flash by default.
+
+    ChatDeepSeek keeps the reasoning OpenRouter sends, which ChatOpenAI drops,
+    so the traces show why the model did what it did.
+    """
     name = os.getenv("MODEL_NAME")
-    return ChatOpenAI(
+    return ChatDeepSeek(
         model=name or DEFAULT_MODEL,
         base_url=OPENROUTER_BASE_URL,
         api_key=SecretStr(os.environ["OPENROUTER_API_KEY"]),

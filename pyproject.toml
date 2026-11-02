@@ -13,6 +13,7 @@ dependencies = [
     "ipykernel>=7.3.0",
     "ipywidgets>=8.1.9",
     "langchain>=1.4.2",
+    "langchain-deepseek>=1.1.1",
     "langchain-mcp-adapters>=0.3.2",
     "langchain-openai>=1.6.2",
     "langfuse>=5.1.0",
