@@ -7,6 +7,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+from langfuse import get_client, observe
 
 from agent import api, harness
 from agent.tools import RunContext
@@ -76,12 +77,20 @@ def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
     return f"{claim_id}  failed: {problem}. Back in the queue."
 
 
+@observe(name="work-claim", capture_input=False)
+def work_one_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
+    """Work one claim outside a run, as a trace of its own, and report one line."""
+    get_client().update_current_span(input=claim_id)
+    return work_claim(claim_id, llm)
+
+
 def show_claim_report(message: AnyMessage) -> None:
     """Print each line the queue agent gets back from a claim agent."""
     if isinstance(message, ToolMessage) and message.name == "work_claim":
         print(message.text, flush=True)
 
 
+@observe(name="run-queue", capture_input=False)
 def run_queue(
     limit: int,
     llm: BaseChatModel | None = None,
@@ -92,6 +101,7 @@ def run_queue(
     print(f"Run {run_id} started, capped at {limit} claims", flush=True)
     run = RunContext(run_id, limit, partial(work_claim, llm=claim_llm))
     task = f"Run {run_id}. Work the claims queue, taking on at most {limit} claims."
+    get_client().update_current_span(input=task)
     try:
         summary = harness.run_agent(
             harness.queue_agent(llm), task, show_claim_report, context=run

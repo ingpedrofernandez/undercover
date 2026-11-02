@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Callable
+from functools import cache
 from typing import Any
 
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from langchain.agents.middleware import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
@@ -105,6 +107,7 @@ def claim_agent(llm: BaseChatModel | None = None) -> Agent:
         system_prompt=api.get_instructions()["claim"],
         middleware=middleware(CLAIM_MODEL_CALLS),
         checkpointer=InMemorySaver(),
+        name="claim-agent",
     )
 
 
@@ -116,7 +119,18 @@ def queue_agent(llm: BaseChatModel | None = None) -> Agent:
         system_prompt=api.get_instructions()["queue"],
         middleware=[*middleware(QUEUE_MODEL_CALLS), MissedClaimsCheck()],
         context_schema=RunContext,
+        name="queue-agent",
     )
+
+
+@cache
+def tracing() -> CallbackHandler:
+    """Return the one Langfuse handler that traces every agent run.
+
+    A claim agent run inside the queue agent's tool call inherits the queue
+    agent's handler. Sharing one handler means it is traced once, under that call.
+    """
+    return CallbackHandler()
 
 
 def run_agent(
@@ -125,8 +139,12 @@ def run_agent(
     on_message: Callable[[AnyMessage], None],
     **options: Any,
 ) -> str:
-    """Run an agent on a task, passing on each new message, and return its reply."""
-    states = agent.stream(
+    """Run an agent on a task, traced in Langfuse, and return its reply.
+
+    Each new message is passed on to on_message as it arrives.
+    """
+    traced = agent.with_config(callbacks=[tracing()])
+    states = traced.stream(
         {"messages": [HumanMessage(task)]}, stream_mode="values", **options
     )
     messages = next(states)["messages"]

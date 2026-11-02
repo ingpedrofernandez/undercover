@@ -226,7 +226,7 @@ def test_a_refused_read_is_an_ordinary_tool_result(client):
 def test_command_line_works_one_claim(monkeypatch, capsys):
     worked = []
     monkeypatch.setattr(
-        cli, "work_claim", lambda claim_id: worked.append(claim_id) or "A line."
+        cli, "work_one_claim", lambda claim_id: worked.append(claim_id) or "A line."
     )
     cli.main(["CLM-1001"])
     assert capsys.readouterr().out == "A line.\n"

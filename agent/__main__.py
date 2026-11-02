@@ -6,7 +6,7 @@ from io import TextIOWrapper
 from typing import cast
 
 from agent import api
-from agent.work import run_queue, work_claim
+from agent.work import run_queue, work_one_claim
 
 
 def main(args: list[str]) -> None:
@@ -19,7 +19,7 @@ def main(args: list[str]) -> None:
     options = parser.parse_args(args)
     if options.claim_id:
         try:
-            print(work_claim(options.claim_id))
+            print(work_one_claim(options.claim_id))
         except api.ApiError as error:
             print(f"{options.claim_id}  not started: {error}")
         return
