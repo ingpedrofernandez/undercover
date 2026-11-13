@@ -10,6 +10,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { Claim, Decision, Handler, Step } from "./api";
+import { time } from "./format";
 import { Refusal, claim, history, policy, stubApi } from "./testing";
 
 afterEach(() => {
@@ -89,6 +90,8 @@ const approval: Decision = {
   section: "Section 5, Baggage and Personal Effects",
   reason: "The suitcase was lost by the carrier.",
   decided_at: decidedAt,
+  signed_off_by: null,
+  signed_off_at: null,
 };
 
 const approved: Claim = {
@@ -96,7 +99,12 @@ const approved: Claim = {
   status: "decided",
   thread_id: "t-1",
   decision: approval,
-  payment: { amount: 420, paid_at: decidedAt, signed_off_by: null },
+  payment: {
+    amount: 420,
+    paid_at: decidedAt,
+    signed_off_by: null,
+    signed_off_at: null,
+  },
 };
 
 const held: Claim = {
@@ -157,10 +165,53 @@ it("shows an approval and its payment", async () => {
   expect(panel.getByText(/^Paid/).textContent).toBe("Paid $420.00");
 });
 
-it("shows an approval that hasn't been paid yet", async () => {
-  showClaim({ ...approved, payment: null });
+it("says when the agent is paying an approval", async () => {
+  showClaim({ ...approved, status: "in_progress", payment: null });
   const panel = await decisionPanel();
-  expect(panel.getByText("Not paid yet")).toBeDefined();
+  expect(panel.getByText("The agent is paying this claim.")).toBeDefined();
+  expect(panel.queryByText(/Signed off/)).toBeNull();
+});
+
+const signedOffAt = "2026-09-27T18:02:00+00:00";
+
+const signedOff: Claim = {
+  ...held,
+  status: "in_progress",
+  decision: {
+    ...approval,
+    payout: 1350,
+    signed_off_by: "Dana Whitfield",
+    signed_off_at: signedOffAt,
+  },
+};
+
+it("shows who signed off a payout the agent is paying", async () => {
+  showClaim(signedOff);
+  const panel = await decisionPanel();
+  expect(panel.getByText(/^Signed off by/).textContent).toBe(
+    `Signed off by Dana Whitfield at ${time(signedOffAt)}`,
+  );
+  expect(panel.getByText("The agent is paying this claim.")).toBeDefined();
+  expect(panel.queryByRole("button", { name: "Sign off" })).toBeNull();
+});
+
+it("shows who signed off a payment, and when", async () => {
+  showClaim({
+    ...signedOff,
+    status: "decided",
+    payment: {
+      amount: 1350,
+      paid_at: decidedAt,
+      signed_off_by: "Dana Whitfield",
+      signed_off_at: signedOffAt,
+    },
+  });
+  const panel = await decisionPanel();
+  expect(panel.getByText(/^Paid/).textContent).toBe(
+    `Paid $1,350.00, signed off by Dana Whitfield at ${time(signedOffAt)}`,
+  );
+  expect(panel.queryByText(/^Signed off by/)).toBeNull();
+  expect(panel.queryByText("The agent is paying this claim.")).toBeNull();
 });
 
 it("shows a decline without a payout", async () => {
@@ -259,24 +310,15 @@ it("lets a handler sign off a held payment", async () => {
   expect(await within(select).findByText("Dana Whitfield")).toBeDefined();
   expect(within(select).queryByText("Sam Trainee")).toBeNull();
 
-  const signedOff: Claim = {
-    ...held,
-    status: "decided",
-    payment: {
-      amount: 1350,
-      paid_at: decidedAt,
-      signed_off_by: "Dana Whitfield",
-    },
-  };
   routes["POST /api/claims/CLM-1002/sign-off"] = signedOff;
   fireEvent.change(select, { target: { value: "HND-01" } });
   routes["GET /api/claims/CLM-1002"] = signedOff;
   fireEvent.click(button);
 
-  const payment = await panel.findByText(/signed off by Dana Whitfield/);
-  expect(payment.textContent).toBe(
-    "Paid $1,350.00, signed off by Dana Whitfield",
-  );
+  expect(
+    await panel.findByText(/^Signed off by Dana Whitfield at/),
+  ).toBeDefined();
+  expect(panel.getByText("The agent is paying this claim.")).toBeDefined();
   const [, init] = fetchMock.mock.calls.find(
     ([path, request]) =>
       path === "/api/claims/CLM-1002/sign-off" && request?.method === "POST",

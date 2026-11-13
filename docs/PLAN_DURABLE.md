@@ -72,7 +72,7 @@ The states stay the same. Only what `in_progress` covers changes: an approval is
 | No claim decided twice | `record_decision` returns the claim when the same decision and payout are already recorded, and 409 for a different one |
 | No claim paid twice | `payments` keeps one row per claim, and `pay_claim` returns the claim when it's already paid |
 | The graph waits only when the backend says so | The edge after `agent` reads the claim's status, never the limit |
-| A sign-off reaches the agent only once it's saved, and stands if the agent can't be reached | The backend calls the agent's service after the sign-off is committed, and logs and ignores a failed call |
+| A sign-off reaches the agent only once it's saved, and stands if the agent can't be reached | The backend calls the agent's service in a background task. The request's connection is a dependency with `scope="function"`, which commits as soon as the endpoint returns, before the response is sent and before background tasks run. A failed call is logged and ignored |
 | A claim stopped partway isn't a new attempt | Carrying on resumes the claim's own thread without `start_claim`, so the thread id and the failure count stay as they were |
 | A claim that fails with an error starts afresh | As today: `record_failure` puts it back in the queue, and `start_claim` gives the next try a new thread |
 | A claim with a decision is never put back in the queue | `record_failure` returns 409 for a claim with a decision |
@@ -180,7 +180,7 @@ The agent's modules still depend on each other in one direction: `api` ← `tool
 | `agent/service.py` | new | The agent's web service | `work`, `fastapi` |
 | `agent/__main__.py` | changed | The command line; loads `.env` and catches up before a run | `api`, `work` |
 | `dashboard/src/api.ts`, `components/DecisionPanel.tsx` | changed | The sign-off fields, and the sign-off and payment lines | |
-| `e2e/agent-stand-in.mjs` | new | A stand-in for the agent's service on port 8003 that records the claims it's asked to resume | `node:http` |
+| `e2e/agent-stand-in.ts` | new | A stand-in for the agent's service on port 8003 that records the claims it's asked to resume. TypeScript, which Node runs as it is, so ESLint and `tsc` check it with the rest of `e2e/` | `node:http` |
 | `e2e/api.ts`, `playwright.config.ts` | changed | Reading the stand-in's record; starting it and pointing the test backend at it | |
 
 `docs/CODE_STANDARDS.md` rule 10 is updated to name the service as the agent's fourth part, and the graph's nodes in the harness in place of the middleware.
@@ -244,22 +244,22 @@ Bring the payout rules into the backend as `calculate_payout`, and give the clai
 
 Change the backend's rules: a repeated decision or payment counts as done, an approval is decided once paid, and a sign-off records who and when, moves the claim to in progress and asks the agent's service to pick it up. Add `backend/agent_client.py`. Show the sign-off on the claim page. The end-to-end tests get a stand-in for the agent's service on port 8003. Until phase 5 there's no service on 8002, so a sign-off's call fails and the sign-off stands.
 
-- [ ] pytest: `record_decision` with the same decision and payout again returns 200 and the claim, with one decision. A different decision returns 409, and the first stands
-- [ ] pytest: a decline or a referral is decided at once. An approval within the limit stays in progress until it's paid, then is decided
-- [ ] pytest: `pay_claim` returns the claim. Paying again with the same amount returns 200 and the claim, with one payment. A wrong amount returns 422, a claim that isn't approved 409, and an approval over the limit with no sign-off 403
-- [ ] pytest: a sign-off moves the claim to in progress, with `signed_off_by` "Dana Whitfield", a `signed_off_at` time and no payment. Paying it then decides it, and the payment has the same `signed_off_by` and `signed_off_at`
-- [ ] pytest: a sign-off asks the agent's service to resume the claim exactly once, and when it does, the sign-off is already saved in the database
-- [ ] pytest: with `UNDERCOVER_AGENT` pointing at a port nothing listens on, a sign-off returns 200 and stands
-- [ ] pytest: a second sign-off returns 409. An unknown handler returns 404, and a handler who can't sign off returns 403, as before
-- [ ] pytest: `record_failure` on a claim with a decision returns 409
-- [ ] The backend's tests never reach a real agent's service: they replace `agent_client` with a recorder
-- [ ] Stub model test: `work_claim` reports a claim with a decision without recording a failure
-- [ ] The OpenAPI test passes
-- [ ] `grep -rn "UNDERCOVER_AGENT\|/resume" backend --include=*.py` finds them only in `backend/agent_client.py` and the tests
-- [ ] vitest: the decision panel for a claim in progress with a sign-off shows "Signed off by Dana Whitfield at" a time and "The agent is paying this claim". A payment with a sign-off shows the handler and the time
-- [ ] e2e: the test holds `CLM-1020` for sign-off through the API, and the handler signs off on the claim page. Without a reload, the page shows In progress and "Signed off by Dana Whitfield", and the stand-in on port 8003 has been asked to resume `CLM-1020` once. The test then pays through the API, standing in for the agent, and the page shows Decided and "Paid $1,350.00, signed off by Dana Whitfield at" a time
-- [ ] e2e: the existing tests still pass, including the claim page showing the agent at work
-- [ ] `npm run check` passes
+- [x] pytest: `record_decision` with the same decision and payout again returns 200 and the claim, with one decision. A different decision returns 409, and the first stands
+- [x] pytest: a decline or a referral is decided at once. An approval within the limit stays in progress until it's paid, then is decided
+- [x] pytest: `pay_claim` returns the claim. Paying again with the same amount returns 200 and the claim, with one payment. A wrong amount returns 422, a claim that isn't approved 409, and an approval over the limit with no sign-off 403
+- [x] pytest: a sign-off moves the claim to in progress, with `signed_off_by` "Dana Whitfield", a `signed_off_at` time and no payment. Paying it then decides it, and the payment has the same `signed_off_by` and `signed_off_at`
+- [x] pytest: a sign-off asks the agent's service to resume the claim exactly once, and when it does, the sign-off is already saved in the database
+- [x] pytest: with `UNDERCOVER_AGENT` pointing at a port nothing listens on, a sign-off returns 200 and stands
+- [x] pytest: a second sign-off returns 409. An unknown handler returns 404, and a handler who can't sign off returns 403, as before
+- [x] pytest: `record_failure` on a claim with a decision returns 409
+- [x] The backend's tests never reach a real agent's service: they replace `agent_client` with a recorder
+- [x] Stub model test: `work_claim` reports a claim with a decision without recording a failure
+- [x] The OpenAPI test passes
+- [x] `grep -rn "UNDERCOVER_AGENT\|/resume" backend --include=*.py` finds them only in `backend/agent_client.py` and the tests
+- [x] vitest: the decision panel for a claim in progress with a sign-off shows "Signed off by Dana Whitfield at" a time and "The agent is paying this claim". A payment with a sign-off shows the handler and the time
+- [x] e2e: the test holds `CLM-1020` for sign-off through the API, and the handler signs off on the claim page. Without a reload, the page shows In progress and "Signed off by Dana Whitfield", and the stand-in on port 8003 has been asked to resume `CLM-1020` once. The test then pays through the API, standing in for the agent, and the page shows Decided and "Paid $1,350.00, signed off by Dana Whitfield at" a time
+- [x] e2e: the existing tests still pass, including the claim page showing the agent at work
+- [x] `npm run check` passes
 
 ## Phase 4: The claim agent as a graph that waits and carries on
 

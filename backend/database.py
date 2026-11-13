@@ -79,6 +79,8 @@ decisions = Table(
     Column("section", Text, nullable=False),
     Column("reason", Text, nullable=False),
     Column("decided_at", Text, nullable=False),
+    Column("signed_off_by", Text),
+    Column("signed_off_at", Text),
 )
 payments = Table(
     "payments",
@@ -87,6 +89,7 @@ payments = Table(
     Column("amount", Float, nullable=False),
     Column("paid_at", Text, nullable=False),
     Column("signed_off_by", Text),
+    Column("signed_off_at", Text),
 )
 steps = Table(
     "steps",
@@ -160,14 +163,18 @@ async def connection_slot() -> AsyncIterator[None]:
 
 
 def database(
-    _: Annotated[None, Depends(connection_slot)],
+    _: Annotated[None, Depends(connection_slot, scope="function")],
 ) -> Iterator[Connection]:
-    """Open a connection for one request and commit if the request succeeds."""
+    """Open a connection for one request and commit if the request succeeds.
+
+    It commits as soon as the endpoint returns, before the response is sent and
+    before any background task runs.
+    """
     with engine().begin() as connection:
         yield connection
 
 
-Database = Annotated[Connection, Depends(database)]
+Database = Annotated[Connection, Depends(database, scope="function")]
 
 
 def now() -> str:

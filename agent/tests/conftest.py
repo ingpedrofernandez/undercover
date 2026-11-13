@@ -7,9 +7,9 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 
 from agent import api, harness
 from backend.main import app
-from backend.tests.conftest import client, database
+from backend.tests.conftest import client, database, resumed
 
-__all__ = ["client", "database"]
+__all__ = ["client", "database", "resumed"]
 
 
 @pytest.fixture(scope="session", autouse=True)

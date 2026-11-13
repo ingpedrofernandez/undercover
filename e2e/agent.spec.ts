@@ -4,6 +4,7 @@ import {
   recordDecision,
   recordFailure,
   recordStep,
+  resumedClaims,
   startClaim,
 } from "./api";
 
@@ -123,10 +124,18 @@ test("a handler signs off a payout over the limit", async ({
     label: "Dana Whitfield",
   });
   await page.getByRole("button", { name: "Sign off" }).click();
+  const heading = page.locator(".claim-heading");
+  await expect(heading.getByText("In progress")).toBeVisible();
   await expect(
-    page.locator(".claim-heading").getByText("Decided"),
+    page.getByText(/^Signed off by Dana Whitfield at/),
   ).toBeVisible();
+  await expect(page.getByText("The agent is paying this claim.")).toBeVisible();
+  const asked = await resumedClaims(request);
+  expect(asked.filter((claimId) => claimId === "CLM-1020")).toHaveLength(1);
+
+  expect((await payClaim(request, "CLM-1020", 1350)).ok()).toBe(true);
+  await expect(heading.getByText("Decided")).toBeVisible();
   await expect(
-    page.getByText("Paid $1,350.00, signed off by Dana Whitfield"),
+    page.getByText(/^Paid \$1,350\.00, signed off by Dana Whitfield at \d/),
   ).toBeVisible();
 });

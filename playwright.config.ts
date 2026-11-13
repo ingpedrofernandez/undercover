@@ -1,7 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
 // The tests run their own backend and dashboard, on their own ports and
-// database, so they never touch the servers started by `npm run dev`.
+// database, so they never touch the servers started by `npm run dev`. The
+// backend tells a stand-in for the agent's service about each sign-off.
 export default defineConfig({
   testDir: "e2e",
   outputDir: "e2e/test-results",
@@ -12,7 +13,14 @@ export default defineConfig({
       command:
         "uv run -m backend.seed && uv run -m uvicorn backend.main:app --port 8001",
       url: "http://127.0.0.1:8001/api/health",
-      env: { UNDERCOVER_DB: "e2e/undercover.db" },
+      env: {
+        UNDERCOVER_DB: "e2e/undercover.db",
+        UNDERCOVER_AGENT: "http://127.0.0.1:8003",
+      },
+    },
+    {
+      command: "node e2e/agent-stand-in.ts",
+      url: "http://127.0.0.1:8003/resumed",
     },
     {
       command: "npx vite dashboard --port 5174 --strictPort",

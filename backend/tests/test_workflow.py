@@ -3,6 +3,9 @@ from contextlib import closing
 
 import pytest
 
+from backend import agent_client
+from backend.agent_client import resume_claim
+
 
 def start(client, claim_id):
     return client.post(f"/api/claims/{claim_id}/start", json={"thread_id": "t-1"})
@@ -106,18 +109,61 @@ def test_invalid_decisions(client, decision, payout, section):
     assert client.get("/api/claims/CLM-1001").json()["decision"] is None
 
 
-def test_approve_and_pay_within_the_limit(client):
+def count(database, table, claim_id):
+    with closing(sqlite3.connect(database)) as db:
+        query = f"SELECT count(*) FROM {table} WHERE claim_id = ?"  # noqa: S608
+        return db.execute(query, (claim_id,)).fetchone()[0]
+
+
+def test_an_approval_within_the_limit_is_decided_once_paid(client, database):
     start(client, "CLM-1001")
     claim = decide(client, "CLM-1001", "approve", 420.0).json()
-    assert claim["status"] == "decided"
+    assert claim["status"] == "in_progress"
     assert claim["decision"]["payout"] == 420.0
+    assert claim["decision"]["signed_off_by"] is None
     assert claim["payment"] is None
     response = pay(client, "CLM-1001", 420.0)
     assert response.status_code == 200
-    assert response.json()["amount"] == 420.0
-    assert response.json()["signed_off_by"] is None
-    assert client.get("/api/claims/CLM-1001").json()["payment"]["amount"] == 420.0
-    assert pay(client, "CLM-1001", 420.0).status_code == 409
+    claim = response.json()
+    assert claim["status"] == "decided"
+    assert claim["payment"]["amount"] == 420.0
+    assert claim["payment"]["signed_off_by"] is None
+    assert claim["payment"]["signed_off_at"] is None
+    assert client.get("/api/claims/CLM-1001").json() == claim
+
+    again = pay(client, "CLM-1001", 420.0)
+    assert again.status_code == 200
+    assert again.json() == claim
+    assert count(database, "payments", "CLM-1001") == 1
+
+
+def test_the_same_decision_again_changes_nothing(client, database):
+    start(client, "CLM-1003")
+    first = decide(client, "CLM-1003", "decline", 0).json()
+    again = decide(client, "CLM-1003", "decline", 0)
+    assert again.status_code == 200
+    assert again.json() == first
+    assert count(database, "decisions", "CLM-1003") == 1
+
+
+@pytest.mark.parametrize(("decision", "payout"), [("refer", 0), ("approve", 50.0)])
+def test_a_different_decision_is_refused(client, decision, payout):
+    start(client, "CLM-1003")
+    decide(client, "CLM-1003", "decline", 0)
+    response = decide(client, "CLM-1003", decision, payout)
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Claim CLM-1003 already has a different decision"
+    )
+    claim = client.get("/api/claims/CLM-1003").json()
+    assert claim["decision"]["decision"] == "decline"
+
+
+def test_an_approval_again_with_another_payout_is_refused(client):
+    start(client, "CLM-1001")
+    decide(client, "CLM-1001", "approve", 420.0)
+    assert decide(client, "CLM-1001", "approve", 420.0).status_code == 200
+    assert decide(client, "CLM-1001", "approve", 400.0).status_code == 409
 
 
 def test_queue_shows_the_decision(client):
@@ -125,7 +171,7 @@ def test_queue_shows_the_decision(client):
     decide(client, "CLM-1001", "approve", 420.0)
     first = client.get("/api/claims").json()[0]
     assert (first["status"], first["decision"], first["payout"]) == (
-        "decided",
+        "in_progress",
         "approve",
         420.0,
     )
@@ -144,8 +190,9 @@ def test_payment_must_match_the_payout(client):
 
 def test_exactly_the_limit_needs_no_sign_off(client):
     start(client, "CLM-1002")
-    assert decide(client, "CLM-1002", "approve", 1000.0).json()["status"] == "decided"
-    assert pay(client, "CLM-1002", 1000.0).status_code == 200
+    claim = decide(client, "CLM-1002", "approve", 1000.0).json()
+    assert claim["status"] == "in_progress"
+    assert pay(client, "CLM-1002", 1000.0).json()["status"] == "decided"
 
 
 def test_over_the_limit_waits_for_sign_off(client):
@@ -160,16 +207,57 @@ def test_over_the_limit_waits_for_sign_off(client):
     assert client.get("/api/claims/CLM-1002").json()["payment"] is None
 
 
-def test_sign_off(client):
+def test_a_sign_off_leaves_the_claim_for_the_agent_to_pay(client):
     start(client, "CLM-1002")
     decide(client, "CLM-1002", "approve", 1350.0)
     assert sign_off(client, "CLM-1002", "HND-99").status_code == 404
-    claim = sign_off(client, "CLM-1002", "HND-01").json()
-    assert claim["status"] == "decided"
-    assert claim["payment"]["amount"] == 1350.0
-    assert claim["payment"]["signed_off_by"] == "Dana Whitfield"
-    assert pay(client, "CLM-1002", 1350.0).status_code == 409
+    response = sign_off(client, "CLM-1002", "HND-01")
+    assert response.status_code == 200
+    claim = response.json()
+    assert claim["status"] == "in_progress"
+    assert claim["decision"]["signed_off_by"] == "Dana Whitfield"
+    assert claim["decision"]["signed_off_at"]
+    assert claim["payment"] is None
     assert sign_off(client, "CLM-1002", "HND-01").status_code == 409
+
+    paid = pay(client, "CLM-1002", 1350.0).json()
+    assert paid["status"] == "decided"
+    assert paid["payment"]["amount"] == 1350.0
+    assert paid["payment"]["signed_off_by"] == "Dana Whitfield"
+    assert paid["payment"]["signed_off_at"] == claim["decision"]["signed_off_at"]
+
+
+def test_a_sign_off_asks_the_agent_to_resume_once_it_is_saved(
+    client, database, monkeypatch, resumed
+):
+    def saved_sign_off(claim_id):
+        with closing(sqlite3.connect(database)) as db:
+            query = "SELECT signed_off_by FROM decisions WHERE claim_id = ?"
+            resumed.append((claim_id, db.execute(query, (claim_id,)).fetchone()[0]))
+
+    monkeypatch.setattr(agent_client, "resume_claim", saved_sign_off)
+    start(client, "CLM-1002")
+    decide(client, "CLM-1002", "approve", 1350.0)
+    assert resumed == []
+    sign_off(client, "CLM-1002", "HND-01")
+    assert resumed == [("CLM-1002", "Dana Whitfield")]
+    sign_off(client, "CLM-1002", "HND-01")
+    assert len(resumed) == 1
+
+
+def test_a_sign_off_stands_when_the_agent_cannot_be_reached(
+    client, monkeypatch, caplog
+):
+    monkeypatch.setattr(agent_client, "resume_claim", resume_claim)
+    monkeypatch.setenv("UNDERCOVER_AGENT", "http://127.0.0.1:9")
+    start(client, "CLM-1002")
+    decide(client, "CLM-1002", "approve", 1350.0)
+    response = sign_off(client, "CLM-1002", "HND-01")
+    assert response.status_code == 200
+    claim = client.get("/api/claims/CLM-1002").json()
+    assert claim["status"] == "in_progress"
+    assert claim["decision"]["signed_off_by"] == "Dana Whitfield"
+    assert "The agent's service did not pick up CLM-1002" in caplog.text
 
 
 def test_sign_off_needs_a_claim_waiting_for_it(client):
@@ -228,6 +316,15 @@ def test_failure_needs_a_claim_in_progress(client):
     decide(client, "CLM-1002", "approve", 1350)
     assert fail(client, "CLM-1002").status_code == 409
     assert fail(client, "CLM-9999").status_code == 404
+
+
+def test_a_claim_with_a_decision_is_never_put_back_in_the_queue(client):
+    start(client, "CLM-1001")
+    decide(client, "CLM-1001", "approve", 420.0)
+    response = fail(client, "CLM-1001")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Claim CLM-1001 has a decision"
+    assert client.get("/api/claims/CLM-1001").json()["status"] == "in_progress"
 
 
 def test_failure_needs_a_reason(client):

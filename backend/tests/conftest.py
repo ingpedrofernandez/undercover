@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import agent_client
 from backend.main import app
 from backend.seed import seed
 
@@ -18,3 +19,11 @@ def database(tmp_path, monkeypatch):
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def resumed(monkeypatch):
+    """Record the claims the backend asks the agent's service to resume."""
+    claims = []
+    monkeypatch.setattr(agent_client, "resume_claim", claims.append)
+    return claims

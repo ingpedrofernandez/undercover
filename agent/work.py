@@ -77,7 +77,7 @@ def work_started_claim(
     except Exception as error:  # one failed claim must never stop the queue
         problem = f"{type(error).__name__}: {error}".splitlines()[0]
     claim = api.get_claim(claim_id)
-    if claim["status"] != "in_progress":
+    if claim["decision"] is not None:
         return report(claim)
     claim = api.record_failure(claim_id, problem)
     problem = problem.rstrip(".")

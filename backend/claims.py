@@ -2,9 +2,10 @@
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy import Connection, RowMapping, insert, select, update
 
+from backend import agent_client
 from backend.database import (
     Database,
     claims,
@@ -48,9 +49,12 @@ CLAIM = (
         decisions.c.section,
         decisions.c.reason,
         decisions.c.decided_at,
+        decisions.c.signed_off_by,
+        decisions.c.signed_off_at,
         payments.c.amount,
         payments.c.paid_at,
-        payments.c.signed_off_by,
+        payments.c.signed_off_by.label("paid_signed_off_by"),
+        payments.c.signed_off_at.label("paid_signed_off_at"),
     )
     .join_from(claims, customers, claims.c.customer_id == customers.c.customer_id)
     .outerjoin(decisions, decisions.c.claim_id == claims.c.claim_id)
@@ -91,7 +95,12 @@ def to_claim(row: RowMapping) -> Claim:
         decision = Decision(**{field: row[field] for field in Decision.model_fields})
     payment = None
     if row["paid_at"] is not None:
-        payment = Payment(**{field: row[field] for field in Payment.model_fields})
+        payment = Payment(
+            amount=row["amount"],
+            paid_at=row["paid_at"],
+            signed_off_by=row["paid_signed_off_by"],
+            signed_off_at=row["paid_signed_off_at"],
+        )
     return Claim(
         **json.loads(row["record"])
         | {
@@ -111,13 +120,13 @@ def set_status(db: Connection, claim_id: str, status: Status) -> None:
     )
 
 
-def pay(
-    db: Connection, claim_id: str, amount: float, signed_off_by: str | None
-) -> Payment:
-    """Record a payment on a claim."""
-    payment = Payment(amount=amount, paid_at=now(), signed_off_by=signed_off_by)
-    db.execute(insert(payments).values(claim_id=claim_id, **payment.model_dump()))
-    return payment
+def status_after(db: Connection, decision: str, payout: float) -> Status:
+    """Return a claim's status once decided: an approval is decided when it's paid."""
+    if decision != "approve":
+        return "decided"
+    if needs_sign_off(db, payout):
+        return "waiting_for_sign_off"
+    return "in_progress"
 
 
 def add_step(
@@ -187,6 +196,8 @@ def list_steps(claim_id: str, db: Database) -> list[Step]:
 def record_failure(claim_id: str, request: FailureRequest, db: Database) -> Claim:
     """Record a failed try on a claim; a second failure leaves it for a handler."""
     claim = find_claim(db, claim_id)
+    if claim["decision"] is not None:
+        raise HTTPException(409, f"Claim {claim_id} has a decision")
     if claim["status"] != "in_progress":
         raise HTTPException(409, f"Claim {claim_id} is not in progress")
     failures = db.execute(
@@ -206,10 +217,16 @@ def record_failure(claim_id: str, request: FailureRequest, db: Database) -> Clai
 @router.post("/{claim_id}/decision", operation_id="record_decision")
 def record_decision(claim_id: str, request: DecisionRequest, db: Database) -> Claim:
     """Record the decision on a claim; an approval over the limit waits for sign-off."""
-    if find_claim(db, claim_id)["status"] != "in_progress":
-        raise HTTPException(409, f"Claim {claim_id} is not in progress")
+    claim = find_claim(db, claim_id)
     payout = round(request.payout, 2)
-    held = request.decision == "approve" and needs_sign_off(db, payout)
+    if claim["decision"] is not None:
+        if (claim["decision"], claim["payout"]) != (request.decision, payout):
+            raise HTTPException(
+                409, f"Claim {claim_id} already has a different decision"
+            )
+        return to_claim(claim)
+    if claim["status"] != "in_progress":
+        raise HTTPException(409, f"Claim {claim_id} is not in progress")
     db.execute(
         insert(decisions).values(
             claim_id=claim_id,
@@ -220,33 +237,45 @@ def record_decision(claim_id: str, request: DecisionRequest, db: Database) -> Cl
             decided_at=now(),
         )
     )
-    set_status(db, claim_id, "waiting_for_sign_off" if held else "decided")
+    set_status(db, claim_id, status_after(db, request.decision, payout))
     return to_claim(find_claim(db, claim_id))
 
 
 @router.post("/{claim_id}/payment", operation_id="pay_claim")
-def pay_claim(claim_id: str, request: PaymentRequest, db: Database) -> Payment:
+def pay_claim(claim_id: str, request: PaymentRequest, db: Database) -> Claim:
     """Pay an approved claim its payout, unless it needs a handler's sign-off."""
     claim = find_claim(db, claim_id)
     if claim["decision"] != "approve":
         raise HTTPException(409, f"Claim {claim_id} has not been approved")
+    if round(request.amount, 2) != claim["payout"]:
+        raise HTTPException(
+            422, f"The amount must be the approved payout of {dollars(claim['payout'])}"
+        )
     if claim["paid_at"] is not None:
-        raise HTTPException(409, f"Claim {claim_id} has already been paid")
+        return to_claim(claim)
     if claim["status"] == "waiting_for_sign_off":
         raise HTTPException(
             403,
             f"A payout over {dollars(approval_limit(db))} needs a handler's sign-off",
         )
-    if round(request.amount, 2) != claim["payout"]:
-        raise HTTPException(
-            422, f"The amount must be the approved payout of {dollars(claim['payout'])}"
+    db.execute(
+        insert(payments).values(
+            claim_id=claim_id,
+            amount=claim["payout"],
+            paid_at=now(),
+            signed_off_by=claim["signed_off_by"],
+            signed_off_at=claim["signed_off_at"],
         )
-    return pay(db, claim_id, claim["payout"], None)
+    )
+    set_status(db, claim_id, "decided")
+    return to_claim(find_claim(db, claim_id))
 
 
 @router.post("/{claim_id}/sign-off", operation_id="sign_off_claim")
-def sign_off_claim(claim_id: str, request: SignOffRequest, db: Database) -> Claim:
-    """Sign off a held payout as a handler, which pays it and decides the claim."""
+def sign_off_claim(
+    claim_id: str, request: SignOffRequest, db: Database, background: BackgroundTasks
+) -> Claim:
+    """Sign off a held payout as a handler, so the agent can pay it."""
     claim = find_claim(db, claim_id)
     if claim["status"] != "waiting_for_sign_off":
         raise HTTPException(409, f"Claim {claim_id} is not waiting for sign-off")
@@ -263,6 +292,11 @@ def sign_off_claim(claim_id: str, request: SignOffRequest, db: Database) -> Clai
             403,
             f"{handler.name} can't sign off payouts over {dollars(approval_limit(db))}",
         )
-    pay(db, claim_id, claim["payout"], handler.name)
-    set_status(db, claim_id, "decided")
+    db.execute(
+        update(decisions)
+        .where(decisions.c.claim_id == claim_id)
+        .values(signed_off_by=handler.name, signed_off_at=now())
+    )
+    set_status(db, claim_id, "in_progress")
+    background.add_task(agent_client.resume_claim, claim_id)
     return to_claim(find_claim(db, claim_id))

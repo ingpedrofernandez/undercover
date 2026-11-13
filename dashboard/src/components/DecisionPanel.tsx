@@ -11,6 +11,11 @@ function progress(status: Status): string {
   return "The agent hasn't started on this claim.";
 }
 
+// When a held payout was signed off, if the record says.
+function at(signedOffAt: string | null): string {
+  return signedOffAt ? ` at ${time(signedOffAt)}` : "";
+}
+
 export function DecisionPanel({
   claim,
   onSignedOff,
@@ -34,15 +39,24 @@ export function DecisionPanel({
           <p className="small muted">Decided at {time(decision.decided_at)}</p>
         </>
       )}
-      {payment && (
+      {decision?.signed_off_by && !payment && (
         <p className="payment">
-          Paid <span className="mono">{money(payment.amount)}</span>
-          {payment.signed_off_by && `, signed off by ${payment.signed_off_by}`}
+          Signed off by {decision.signed_off_by}
+          {at(decision.signed_off_at)}
         </p>
       )}
       {decision?.decision === "approve" &&
         !payment &&
-        claim.status === "decided" && <p className="payment">Not paid yet</p>}
+        claim.status === "in_progress" && (
+          <p className="muted">The agent is paying this claim.</p>
+        )}
+      {payment && (
+        <p className="payment">
+          Paid <span className="mono">{money(payment.amount)}</span>
+          {payment.signed_off_by &&
+            `, signed off by ${payment.signed_off_by}${at(payment.signed_off_at)}`}
+        </p>
+      )}
       {decision && claim.status === "waiting_for_sign_off" && (
         <div className="sign-off">
           <p>

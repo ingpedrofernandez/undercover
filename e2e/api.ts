@@ -6,7 +6,10 @@ import {
 
 // The tests stand in for the agent by calling the backend through the
 // dashboard's proxy. Every call they make is here, and each must succeed,
-// apart from payClaim, whose refusal a test checks.
+// apart from payClaim, whose refusal a test checks. resumedClaims reads what
+// the stand-in for the agent's service was asked to resume.
+
+const AGENT_STAND_IN = "http://127.0.0.1:8003";
 
 type Request = APIRequestContext;
 
@@ -81,3 +84,8 @@ export const finishRun = (request: Request, runId: number, summary: string) =>
   succeeds(
     request.post(`/api/runs/${String(runId)}/finish`, { data: { summary } }),
   );
+
+export async function resumedClaims(request: Request): Promise<string[]> {
+  const response = await succeeds(request.get(`${AGENT_STAND_IN}/resumed`));
+  return (await response.json()) as string[];
+}

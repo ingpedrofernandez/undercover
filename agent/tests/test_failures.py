@@ -117,3 +117,12 @@ def test_approval_lines(client, payout, pays, line):
         )
     )
     assert work.work_claim("CLM-1001", stub) == line
+
+
+def test_a_claim_with_a_decision_is_reported_without_a_failure(client):
+    stub = StubModel(
+        messages=iter([decide("CLM-1001", "approve", 420.0), AIMessage("Done.")])
+    )
+    assert work.work_claim("CLM-1001", stub) == "CLM-1001  approve  $420.00  not paid"
+    assert claim(client, "CLM-1001")["status"] == "in_progress"
+    assert "error" not in {s["kind"] for s in steps(client, "CLM-1001")}
