@@ -1,6 +1,6 @@
 # Process
 
-`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend and the dashboard.
+`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend on port 8000 and the agent's service on port 8002, both with `.env` so their records and checkpoints are in Supabase, and the dashboard on http://localhost:5173. `npm run seed` rebuilds the backend's records in Supabase from `data/`, leaving the checkpoints. The tests never read `.env`: they run on SQLite and keep checkpoints in memory.
 
 `npm run check` runs every check:
 

@@ -192,6 +192,7 @@ The agent's modules still depend on each other in one direction: `api` ← `tool
 3. `claim_view` is a SQLite view, which would need writing twice. It becomes one Core `select`.
 4. `steps()` and `record_steps()` are in `work.py`, but the graph's nodes record the steps now. They move to `harness.py`.
 5. `work_claim` decides whether the agent finished by the claim's status. With an approval in progress until it's paid, it checks whether a decision was recorded instead.
+6. Found while building phase 5: `agent/api.py` reached the backend at `http://localhost:8000`. On Windows, Python tries `::1` first, and uvicorn listens only on `127.0.0.1`, so every new connection waited about 2 seconds for the refusal before falling back. Each backend call took 2.2 seconds, and a carry-on after a sign-off took 18.6 seconds. The agent now uses `http://127.0.0.1:8000`, like the dashboard's proxy and the backend's client for the agent's service, and the same carry-on takes 2.1 seconds.
 
 ### Dashboard
 
@@ -290,12 +291,12 @@ Build the claim graph in `agent/harness.py`, with the Postgres checkpointer and 
 
 Build `agent/service.py`, and have `npm run dev` start it on port 8002 with `.env`, next to the backend and the dashboard. Update rule 10 in `docs/CODE_STANDARDS.md` and the running instructions in `docs/PROCESS.md`.
 
-- [ ] pytest: the service's operations each have an `operation_id`, a one-line docstring and no optional inputs
-- [ ] Stub model test: with `CLM-1002` paused for sign-off and signed off through the backend, `POST /api/claims/CLM-1002/resume` on the service returns 202, and the background work pays the claim once, signed off by the handler. A second call changes nothing
-- [ ] `npm run dev` starts the backend on port 8000, the agent's service on port 8002 and the dashboard on port 5173, on Windows, and `curl -s localhost:8002/api/health` returns `{"status": "ok"}`
-- [ ] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent CLM-1008` waits for sign-off. Within five seconds of a sign-off with `curl`, `curl -s localhost:8000/api/claims/CLM-1008` shows it decided and paid, signed off by Dana Whitfield with the time, and the service's console shows its line
-- [ ] `docs/CODE_STANDARDS.md` names the service as the agent's fourth part, and `docs/PROCESS.md` says what `npm run dev` and `npm run seed` start
-- [ ] `npm run check` passes
+- [x] pytest: the service's operations each have an `operation_id`, a one-line docstring and no optional inputs
+- [x] Stub model test: with `CLM-1002` paused for sign-off and signed off through the backend, `POST /api/claims/CLM-1002/resume` on the service returns 202, and the background work pays the claim once, signed off by the handler. A second call changes nothing
+- [x] `npm run dev` starts the backend on port 8000, the agent's service on port 8002 and the dashboard on port 5173, on Windows, and `curl -s localhost:8002/api/health` returns `{"status": "ok"}`
+- [x] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent CLM-1008` waits for sign-off. Within five seconds of a sign-off with `curl`, `curl -s localhost:8000/api/claims/CLM-1008` shows it decided and paid, signed off by Dana Whitfield with the time, and the service's console shows its line
+- [x] `docs/CODE_STANDARDS.md` names the service as the agent's fourth part, and `docs/PROCESS.md` says what `npm run dev` and `npm run seed` start
+- [x] `npm run check` passes
 
 ## Phase 6: A trial on five claims
 

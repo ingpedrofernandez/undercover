@@ -1,5 +1,4 @@
-def test_every_operation_follows_the_api_rules(client):
-    schema = client.get("/openapi.json").json()
+def follows_the_api_rules(schema):
     models = schema["components"]["schemas"]
     for path, operations in schema["paths"].items():
         for method, operation in operations.items():
@@ -16,3 +15,7 @@ def test_every_operation_follows_the_api_rules(client):
                 ref = body["content"]["application/json"]["schema"]["$ref"]
                 model = models[ref.split("/")[-1]]
                 assert set(model["properties"]) == set(model["required"]), name
+
+
+def test_every_operation_follows_the_api_rules(client):
+    follows_the_api_rules(client.get("/openapi.json").json())
