@@ -106,3 +106,23 @@ def test_a_model_call_without_a_cost_records_none(client, spans):
     work.work_claim("CLM-1001", script("CLM-1001", "POL-2001", "CUS-3001", "refer", 0))
 
     assert all(COST not in span.attributes for span in named(spans(), "StubModel"))
+
+
+def test_the_wait_and_the_payment_are_two_traces_in_one_session(client, spans):
+    work.work_claim(
+        "CLM-1002", script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
+    )
+    client.post("/api/claims/CLM-1002/sign-off", json={"handler_id": "HND-01"})
+    work.carry_on("CLM-1002", StubModel(messages=iter([])))
+
+    traced = spans()
+    waited, paid = named(traced, "work-claim")
+    assert waited.attributes[OUTPUT] == (
+        "CLM-1002  approve  $1,350.00  waiting for sign-off"
+    )
+    assert paid.attributes[OUTPUT] == "CLM-1002  approve  $1,350.00  paid"
+    assert waited.context.trace_id != paid.context.trace_id
+    session = f"CLM-1002:{thread_of(client, 'CLM-1002')}"
+    assert waited.attributes[SESSION] == paid.attributes[SESSION] == session
+    assert named(in_trace(traced, waited), "pay") == []
+    assert len(named(in_trace(traced, paid), "pay")) == 1

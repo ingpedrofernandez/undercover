@@ -25,5 +25,5 @@ Approve a claim that is clearly covered and decline one that is clearly excluded
 
 - An approval's payout is the one `calculate_payout` works out with UnderCover's payout rules, from the covered items and expenses and anything others have already paid. The payout you record is the one it returns.
 - One decision is recorded with `record_decision`: the payout in US dollars, 0 for a decline or a referral; the section you relied on most, from either document; and two or three plain sentences that explain the decision to a colleague. A referral says what is needed.
-- An approval is paid with `pay_claim`. A large payout waits for a handler's sign-off; when `pay_claim` says so, that is expected and you leave it there.
+- An approval you record is paid for you. A payout over the approval limit waits for a handler's sign-off first, which is expected, so a large approval is still the right decision when the claim is covered.
 - Your final reply gives the decision, the payout and the reason in plain text.

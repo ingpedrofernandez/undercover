@@ -108,7 +108,7 @@ def record_decision(
 
 
 def pay_claim(claim_id: str, amount: float) -> dict[str, Any]:
-    """Pay an approved claim its payout."""
+    """Pay an approved claim its payout, and return the claim."""
     return call("POST", f"/api/claims/{claim_id}/payment", {"amount": amount})
 
 
@@ -120,6 +120,11 @@ def record_failure(claim_id: str, reason: str) -> dict[str, Any]:
 def start_run(limit: int) -> dict[str, Any]:
     """Start a run of the agent over the queue, capped at limit claims."""
     return call("POST", "/api/runs", {"limit": limit})
+
+
+def get_latest_run() -> dict[str, Any] | None:
+    """Get the most recent run, or None before the first run."""
+    return call("GET", "/api/runs/latest")
 
 
 def write_todos(run_id: int, todos: list[dict[str, str]]) -> dict[str, Any]:

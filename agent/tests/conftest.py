@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from langfuse import Langfuse, get_client
+from langgraph.checkpoint.memory import InMemorySaver
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
@@ -40,6 +41,17 @@ def spans(traces):
 def backend(monkeypatch):
     """Send the agent's requests to the test backend."""
     monkeypatch.setattr(api, "client", lambda: TestClient(app))
+
+
+@pytest.fixture(autouse=True)
+def checkpointer(monkeypatch):
+    """Save the claim graph's steps in memory, in one saver for the whole test.
+
+    A restart is a new graph on the same saver.
+    """
+    saver = InMemorySaver()
+    monkeypatch.setattr(harness, "checkpointer", lambda: saver)
+    return saver
 
 
 @pytest.fixture(autouse=True)

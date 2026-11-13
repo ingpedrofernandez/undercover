@@ -176,7 +176,7 @@ The agent's modules still depend on each other in one direction: `api` ← `tool
 | `agent/api.py` | changed | Adds `calculate_payout`; `pay_claim` returns the claim | `httpx` |
 | `agent/tools.py` | changed | Adds `calculate_payout`; the claim agent loses `pay_claim` | `api` |
 | `agent/harness.py` | changed | The model, the claim graph and the queue agent with its middleware, the checkpointer, tracing, recording steps, and running them | `api`, `tools`, LangGraph, LangChain, Langfuse, `psycopg_pool` |
-| `agent/work.py` | changed | The work: start a claim, carry one on, catch up after a stop, run the queue | `api`, `harness`, `tools` |
+| `agent/work.py` | changed | The work: start a claim, carry one on, catch up after a stop, run the queue. What carries a thread on (`harness.carry_on_input`) is in the harness, so the work never touches LangGraph itself | `api`, `harness`, `tools` |
 | `agent/service.py` | new | The agent's web service | `work`, `fastapi` |
 | `agent/__main__.py` | changed | The command line; loads `.env` and catches up before a run | `api`, `work` |
 | `dashboard/src/api.ts`, `components/DecisionPanel.tsx` | changed | The sign-off fields, and the sign-off and payment lines | |
@@ -265,26 +265,26 @@ Change the backend's rules: a repeated decision or payment counts as done, an ap
 
 Build the claim graph in `agent/harness.py`, with the Postgres checkpointer and `durability="sync"`. The claim agent loses `pay_claim`, and `claim.md` changes to match. Build `work.carry_on` and the catch-up before a run, and `uv run -m agent CLM-1008` carries on a claim in progress. Each carry-on is a trace in the claim's session.
 
-- [ ] A pytest test checks the claim agent's tools are exactly `get_claim`, `get_policy`, `get_claim_history`, `list_sections`, `search_documents`, `read_section`, `calculate_payout` and `record_decision`
-- [ ] A pytest test checks the graph's nodes are `agent`, `tools`, `sign_off` and `pay`, with the edges in the design
-- [ ] Stub model test, within the limit: the stub approves $420 on `CLM-1001` and finishes. The `pay` node pays it once, the claim is decided, and the steps end with the graph's `pay_claim` call and its result
-- [ ] Stub model test, the pause: the stub approves $1,350 on `CLM-1002`. The graph stops with `next` of `("sign_off",)` and an interrupt holding the claim id and payout. The claim is waiting for sign-off with no payment, and the line ends "waiting for sign-off"
-- [ ] Stub model test, the sign-off: after a handler signs off through the API, `carry_on` with a new graph on the same checkpointer pays the claim once, signed off by the handler at the sign-off time, with no model call. A second `carry_on` changes nothing
-- [ ] Stub model test, stopped partway: the stub stops the process (`KeyboardInterrupt`) on its third call. The claim stays in progress. `carry_on` with a new graph and a new stub carries on: the stub's first prompt holds the conversation from before the stop, the thread id is unchanged, there's no `error` step, the failure count is 0, the steps from before aren't recorded again, and there's one decision
-- [ ] Stub model test: a claim stopped after `start_claim` and before its first step was saved starts on the same thread
-- [ ] Stub model test, stopped while paying: `pay_claim` pays and then the process stops. `carry_on` runs `pay` again, which counts as done: one payment, and the claim is decided
-- [ ] Stub model test, an error: the model fails. The claim goes back in the queue, and the next `work_claim` starts it on a new thread, with only the task in the stub's first prompt
-- [ ] Stub model tests carried over: a refusal reaches the model as `Refused: ...` and is recorded as a `tool_result`; a section read is a `read` step; a failed model call is retried twice; a claim agent that keeps calling tools is stopped at 30 model calls and its claim goes back in the queue
-- [ ] Stub model test: a claim stopped at 25 model calls is stopped after 5 more when carried on
-- [ ] Stub model test: the run's catch-up finishes a stopped run with a summary saying it was stopped, carries on each claim in progress and prints a line for each, and those claims don't count against the new run's cap
-- [ ] Tests cover the command line: with claims in progress and none waiting, `uv run -m agent` carries them on and says no claims are waiting; a claim id in progress is carried on; a claim id waiting is started
-- [ ] Tracing test: the trace that stops at the sign-off and the trace that pays after it are two `work-claim` traces in the same session
-- [ ] `grep -n pay_claim backend/instructions/claim.md` finds nothing
-- [ ] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent CLM-1008` prints a line ending "waiting for sign-off", and through the Supabase MCP server `undercover.checkpoints` holds rows for its thread
-- [ ] Live: a sign-off with `curl` (`HND-01`) moves `CLM-1008` to in progress, signed off. The call to the agent's service fails, since it isn't built yet, and the sign-off stands
-- [ ] Live: `uv run -m agent CLM-1008` again prints "approve" and "paid". The claim is decided with one decision, the same thread id, and a payment signed off by Dana Whitfield with the time
-- [ ] Live: through Langfuse's API, the session `CLM-1008:<its thread id>` holds two `work-claim` traces, the second with the `pay` node
-- [ ] `npm run check` passes
+- [x] A pytest test checks the claim agent's tools are exactly `get_claim`, `get_policy`, `get_claim_history`, `list_sections`, `search_documents`, `read_section`, `calculate_payout` and `record_decision`
+- [x] A pytest test checks the graph's nodes are `agent`, `tools`, `sign_off` and `pay`, with the edges in the design
+- [x] Stub model test, within the limit: the stub approves $420 on `CLM-1001` and finishes. The `pay` node pays it once, the claim is decided, and the steps end with the graph's `pay_claim` call and its result
+- [x] Stub model test, the pause: the stub approves $1,350 on `CLM-1002`. The graph stops with `next` of `("sign_off",)` and an interrupt holding the claim id and payout. The claim is waiting for sign-off with no payment, and the line ends "waiting for sign-off"
+- [x] Stub model test, the sign-off: after a handler signs off through the API, `carry_on` with a new graph on the same checkpointer pays the claim once, signed off by the handler at the sign-off time, with no model call. A second `carry_on` changes nothing
+- [x] Stub model test, stopped partway: the stub stops the process (`KeyboardInterrupt`) on its third call. The claim stays in progress. `carry_on` with a new graph and a new stub carries on: the stub's first prompt holds the conversation from before the stop, the thread id is unchanged, there's no `error` step, the failure count is 0, the steps from before aren't recorded again, and there's one decision
+- [x] Stub model test: a claim stopped after `start_claim` and before its first step was saved starts on the same thread
+- [x] Stub model test, stopped while paying: `pay_claim` pays and then the process stops. `carry_on` runs `pay` again, which counts as done: one payment, and the claim is decided
+- [x] Stub model test, an error: the model fails. The claim goes back in the queue, and the next `work_claim` starts it on a new thread, with only the task in the stub's first prompt
+- [x] Stub model tests carried over: a refusal reaches the model as `Refused: ...` and is recorded as a `tool_result`; a section read is a `read` step; a failed model call is retried twice; a claim agent that keeps calling tools is stopped at 30 model calls and its claim goes back in the queue
+- [x] Stub model test: a claim stopped at 25 model calls is stopped after 5 more when carried on
+- [x] Stub model test: the run's catch-up finishes a stopped run with a summary saying it was stopped, carries on each claim in progress and prints a line for each, and those claims don't count against the new run's cap
+- [x] Tests cover the command line: with claims in progress and none waiting, `uv run -m agent` carries them on and says no claims are waiting; a claim id in progress is carried on; a claim id waiting is started
+- [x] Tracing test: the trace that stops at the sign-off and the trace that pays after it are two `work-claim` traces in the same session
+- [x] `grep -n pay_claim backend/instructions/claim.md` finds nothing
+- [x] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent CLM-1008` prints a line ending "waiting for sign-off", and through the Supabase MCP server `undercover.checkpoints` holds rows for its thread
+- [x] Live: a sign-off with `curl` (`HND-01`) moves `CLM-1008` to in progress, signed off. The call to the agent's service fails, since it isn't built yet, and the sign-off stands
+- [x] Live: `uv run -m agent CLM-1008` again prints "approve" and "paid". The claim is decided with one decision, the same thread id, and a payment signed off by Dana Whitfield with the time
+- [x] Live: through Langfuse's API, the session `CLM-1008:<its thread id>` holds two `work-claim` traces, the second with the `pay` node
+- [x] `npm run check` passes
 
 ## Phase 5: The agent's service
 

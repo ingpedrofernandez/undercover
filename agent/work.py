@@ -1,50 +1,21 @@
 """The UnderCover Agent's work: one claim at a time, or a run over the queue."""
 
-import json
 import uuid
+from collections.abc import Callable
 from functools import partial
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+from langchain_core.messages import AnyMessage, ToolMessage
 from langfuse import get_client, observe
 
 from agent import api, harness
 from agent.tools import RunContext
 
-
-def steps(message: AnyMessage) -> list[tuple[str, str]]:
-    """Turn one message from a claim agent's run into steps for the dashboard."""
-    if isinstance(message, ToolMessage):
-        if message.name == "read_section" and message.status == "success":
-            return [("read", message.text)]
-        return [("tool_result", f"{message.name}: {message.text}")]
-    found = []
-    if message.text:
-        found.append(("message", message.text))
-    if isinstance(message, AIMessage):
-        for call in message.tool_calls:
-            args = ", ".join(f"{k}={json.dumps(v)}" for k, v in call["args"].items())
-            found.append(("tool_call", f"{call['name']}({args})"))
-    return found
-
-
-def record_steps(claim_id: str, message: AnyMessage) -> None:
-    """Record a message from a claim agent's run as steps on its claim."""
-    for kind, content in steps(message):
-        api.record_step(claim_id, kind, content)
-
-
-def run_claim_agent(
-    claim_id: str, thread_id: str, llm: BaseChatModel | None = None
-) -> str:
-    """Have a claim agent work a started claim, recording its steps."""
-    return harness.run_agent(
-        harness.claim_agent(llm),
-        f"Claim {claim_id}",
-        partial(record_steps, claim_id),
-        config={"configurable": {"thread_id": thread_id}},
-    )
+STOPPED = (
+    "The run was stopped before it finished. The next run carried on with the"
+    " claims it left in progress."
+)
 
 
 def report(claim: dict[str, Any]) -> str:
@@ -58,21 +29,10 @@ def report(claim: dict[str, Any]) -> str:
     return line
 
 
-def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
-    """Start a claim and work it, traced in its session, and report one line."""
-    thread_id = str(uuid.uuid4())
-    api.start_claim(claim_id, thread_id)
-    return harness.trace_claim(
-        claim_id, thread_id, partial(work_started_claim, claim_id, thread_id, llm)
-    )
-
-
-def work_started_claim(
-    claim_id: str, thread_id: str, llm: BaseChatModel | None = None
-) -> str:
-    """Work a started claim, putting it right if it fails, and report one line."""
+def outcome(claim_id: str, run: Callable[[], None]) -> str:
+    """Run the claim graph, put the claim right if it fails, and report one line."""
     try:
-        run_claim_agent(claim_id, thread_id, llm)
+        run()
         problem = "The claim agent finished without recording a decision"
     except Exception as error:  # one failed claim must never stop the queue
         problem = f"{type(error).__name__}: {error}".splitlines()[0]
@@ -84,6 +44,49 @@ def work_started_claim(
     if claim["status"] == "left_for_handler":
         return f"{claim_id}  failed again: {problem}. Left for a handler."
     return f"{claim_id}  failed: {problem}. Back in the queue."
+
+
+def work_thread(claim_id: str, thread_id: str, graph: harness.Agent, start: Any) -> str:
+    """Run the claim graph on a claim's thread, traced in its session."""
+    run = partial(harness.run_claim_graph, graph, start, thread_id)
+    return harness.trace_claim(claim_id, thread_id, partial(outcome, claim_id, run))
+
+
+def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
+    """Start a waiting claim on a new thread and work it, and report one line."""
+    graph = harness.claim_graph(llm)
+    thread_id = str(uuid.uuid4())
+    api.start_claim(claim_id, thread_id)
+    return work_thread(claim_id, thread_id, graph, harness.claim_task(claim_id))
+
+
+def carry_on(claim_id: str, llm: BaseChatModel | None = None) -> str:
+    """Carry a claim in progress on from its last saved step, and report one line.
+
+    It's the same try at the claim: its thread, steps and failures stay as they were.
+    """
+    graph = harness.claim_graph(llm)
+    claim = api.get_claim(claim_id)
+    start = harness.carry_on_input(graph, claim)
+    return work_thread(claim_id, claim["thread_id"], graph, start)
+
+
+def work_one_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
+    """Carry a claim in progress on, or start a waiting one, and report one line."""
+    if api.get_claim(claim_id)["status"] == "in_progress":
+        return carry_on(claim_id, llm)
+    return work_claim(claim_id, llm)
+
+
+def catch_up(llm: BaseChatModel | None = None) -> None:
+    """Finish a run that was stopped, then carry on every claim left in progress."""
+    run = api.get_latest_run()
+    if run is not None and run["finished_at"] is None:
+        api.finish_run(run["run_id"], STOPPED)
+        print(f"Run {run['run_id']} was stopped before it finished", flush=True)
+    for claim in api.list_claims():
+        if claim["status"] == "in_progress":
+            print(carry_on(claim["claim_id"], llm), flush=True)
 
 
 def show_claim_report(message: AnyMessage) -> None:

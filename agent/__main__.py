@@ -1,4 +1,7 @@
-"""Work the queue with the UnderCover Agent: uv run -m agent [--limit N] [CLM-1001]"""
+"""Work the queue with the UnderCover Agent: uv run -m agent [--limit N] [CLM-1001]
+
+A run first finishes a run that was stopped and carries on every claim in progress.
+"""
 
 import argparse
 import sys
@@ -8,11 +11,11 @@ from typing import cast
 from dotenv import load_dotenv
 
 from agent import api
-from agent.work import run_queue, work_claim
+from agent.work import catch_up, run_queue, work_one_claim
 
 
 def main(args: list[str]) -> None:
-    """Work one named claim, or run the queue capped at --limit or all waiting."""
+    """Work one claim, or catch up and run the queue capped at --limit or waiting."""
     parser = argparse.ArgumentParser(
         prog="uv run -m agent", description="Work the claims queue."
     )
@@ -21,10 +24,11 @@ def main(args: list[str]) -> None:
     options = parser.parse_args(args)
     if options.claim_id:
         try:
-            print(work_claim(options.claim_id))
+            print(work_one_claim(options.claim_id))
         except api.ApiError as error:
             print(f"{options.claim_id}  not started: {error}")
         return
+    catch_up()
     waiting = sum(claim["status"] == "waiting" for claim in api.list_claims())
     limit = options.limit or waiting
     if limit == 0:

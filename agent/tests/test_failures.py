@@ -23,10 +23,12 @@ def failing():
 
 
 def test_a_model_error_puts_the_claim_back_in_the_queue(client):
-    line = work.work_claim("CLM-1001", failing())
+    stub = failing()
+    line = work.work_claim("CLM-1001", stub)
     assert line == (
         "CLM-1001  failed: RuntimeError: The model is unavailable. Back in the queue."
     )
+    assert len(stub.prompts) == 1 + harness.RETRIES
     assert claim(client, "CLM-1001")["status"] == "waiting"
     assert [(s["kind"], s["content"]) for s in steps(client, "CLM-1001")] == [
         ("error", "RuntimeError: The model is unavailable. Back in the queue.")
@@ -63,11 +65,19 @@ def test_a_failed_model_call_is_retried(client):
     assert "error" not in {s["kind"] for s in steps(client, "CLM-1003")}
 
 
+def round_in_circles():
+    return StubModel(
+        messages=(call("get_claim", claim_id="CLM-1001") for _ in itertools.count())
+    )
+
+
 def test_a_claim_agent_going_round_in_circles_is_stopped(client):
-    stub = StubModel(messages=itertools.repeat(call("get_claim", claim_id="CLM-1001")))
+    stub = round_in_circles()
     line = work.work_claim("CLM-1001", stub)
-    assert line.startswith("CLM-1001  failed: ModelCallLimitExceededError")
-    assert line.endswith("Back in the queue.")
+    assert line == (
+        "CLM-1001  failed: ModelCallLimitExceeded: The claim agent made 30 model"
+        " calls without finishing. Back in the queue."
+    )
     assert len(stub.prompts) == harness.CLAIM_MODEL_CALLS
     assert claim(client, "CLM-1001")["status"] == "waiting"
 
@@ -97,32 +107,29 @@ def test_the_command_line_says_why_a_claim_was_not_started(capsys):
     )
 
 
+def approve(payout):
+    return StubModel(
+        messages=iter([decide("CLM-1001", "approve", payout), AIMessage("Done.")])
+    )
+
+
 @pytest.mark.parametrize(
-    ("payout", "pays", "line"),
+    ("payout", "line"),
     [
-        (420.0, True, "CLM-1001  approve  $420.00  paid"),
-        (420.0, False, "CLM-1001  approve  $420.00  not paid"),
-        (1350.0, True, "CLM-1001  approve  $1,350.00  waiting for sign-off"),
+        (420.0, "CLM-1001  approve  $420.00  paid"),
+        (1350.0, "CLM-1001  approve  $1,350.00  waiting for sign-off"),
     ],
 )
-def test_approval_lines(client, payout, pays, line):
-    paying = [call("pay_claim", claim_id="CLM-1001", amount=payout)] if pays else []
-    stub = StubModel(
-        messages=iter(
-            [
-                decide("CLM-1001", "approve", payout),
-                *paying,
-                AIMessage(content="Done."),
-            ]
-        )
-    )
-    assert work.work_claim("CLM-1001", stub) == line
+def test_approval_lines(client, payout, line):
+    assert work.work_claim("CLM-1001", approve(payout)) == line
 
 
-def test_a_claim_with_a_decision_is_reported_without_a_failure(client):
-    stub = StubModel(
-        messages=iter([decide("CLM-1001", "approve", 420.0), AIMessage("Done.")])
-    )
-    assert work.work_claim("CLM-1001", stub) == "CLM-1001  approve  $420.00  not paid"
+def test_a_claim_with_a_decision_is_reported_without_a_failure(client, monkeypatch):
+    def unavailable(claim_id, amount):
+        raise api.ApiError("503: The bank is unavailable")
+
+    monkeypatch.setattr(api, "pay_claim", unavailable)
+    line = work.work_claim("CLM-1001", approve(420.0))
+    assert line == "CLM-1001  approve  $420.00  not paid"
     assert claim(client, "CLM-1001")["status"] == "in_progress"
     assert "error" not in {s["kind"] for s in steps(client, "CLM-1001")}

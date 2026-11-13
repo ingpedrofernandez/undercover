@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import __main__ as cli
-from agent import work
+from agent import harness
 from agent.tests.test_agent import StubModel, call
 from agent.tools import QUEUE_TOOLS
 from agent.work import run_queue
@@ -26,7 +26,7 @@ def three_waiting(database):
 
 
 class ClaimAgents:
-    """Stands in for the claim agent: each try on a claim declines it or fails."""
+    """Stands in for the claim graph: each try on a claim declines it or fails."""
 
     def __init__(self, client, failures=None):
         self.client = client
@@ -34,8 +34,9 @@ class ClaimAgents:
         self.worked: list[str] = []
         self.busy = threading.Lock()
 
-    def __call__(self, claim_id, thread_id, llm=None):
+    def __call__(self, graph, start, thread_id):
         assert self.busy.acquire(blocking=False), "two claims worked at once"
+        claim_id = start["claim_id"]
         try:
             self.worked.append(claim_id)
             time.sleep(0.02)
@@ -51,7 +52,6 @@ class ClaimAgents:
                     "reason": "Excluded.",
                 },
             )
-            return "Declined."
         finally:
             self.busy.release()
 
@@ -59,7 +59,8 @@ class ClaimAgents:
 @pytest.fixture
 def claim_agents(monkeypatch, client, three_waiting):
     agents = ClaimAgents(client)
-    monkeypatch.setattr(work, "run_claim_agent", agents)
+    monkeypatch.setattr(harness, "model", lambda: StubModel(messages=iter([])))
+    monkeypatch.setattr(harness, "run_claim_graph", agents)
     return agents
 
 

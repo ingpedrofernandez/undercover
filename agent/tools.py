@@ -144,12 +144,6 @@ def record_decision(
 
 
 @tool
-def pay_claim(claim_id: str, amount: float) -> dict[str, Any]:
-    """Pay an approved claim its payout, unless it needs a handler's sign-off."""
-    return api.pay_claim(claim_id, amount)
-
-
-@tool
 def list_claims() -> list[dict[str, Any]]:
     """List every claim in the queue with its status, decision and payout."""
     return api.list_claims()
@@ -184,6 +178,5 @@ CLAIM_TOOLS = [
     read_section,
     calculate_payout,
     record_decision,
-    pay_claim,
 ]
 QUEUE_TOOLS = [list_claims, write_todos, work_claim]
