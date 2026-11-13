@@ -1,5 +1,6 @@
 """The harness around both agents: the model, their middleware and running them."""
 
+import contextvars
 import os
 from collections.abc import Callable
 from functools import cache
@@ -21,7 +22,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.outputs import LLMResult
 from langchain_deepseek import ChatDeepSeek
-from langfuse import get_client
+from langfuse import get_client, propagate_attributes
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -163,6 +164,30 @@ def tracing() -> Tracing:
     agent's handler. Sharing one handler means it is traced once, under that call.
     """
     return Tracing()
+
+
+def trace_claim(claim_id: str, thread_id: str, work: Callable[[], str]) -> str:
+    """Do one piece of work on a claim as a work-claim trace of its own.
+
+    The trace is in the session of the claim's thread, so everything that happens
+    on one try at a claim reads as one story. A trace can only be in one session,
+    so the work runs in a fresh context: a claim worked in a run starts a trace of
+    its own rather than nesting under the run's.
+    """
+    return contextvars.Context().run(in_claim_trace, claim_id, thread_id, work)
+
+
+def in_claim_trace(claim_id: str, thread_id: str, work: Callable[[], str]) -> str:
+    """Do the work inside a new work-claim trace, and return its line."""
+    with (
+        get_client().start_as_current_observation(
+            name="work-claim", input=claim_id
+        ) as span,
+        propagate_attributes(session_id=f"{claim_id}:{thread_id}"),
+    ):
+        line = work()
+        span.update(output=line)
+    return line
 
 
 def run_agent(

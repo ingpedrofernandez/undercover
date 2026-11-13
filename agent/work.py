@@ -59,9 +59,18 @@ def report(claim: dict[str, Any]) -> str:
 
 
 def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
-    """Start a claim and work it, putting it right if it fails, and report one line."""
+    """Start a claim and work it, traced in its session, and report one line."""
     thread_id = str(uuid.uuid4())
     api.start_claim(claim_id, thread_id)
+    return harness.trace_claim(
+        claim_id, thread_id, partial(work_started_claim, claim_id, thread_id, llm)
+    )
+
+
+def work_started_claim(
+    claim_id: str, thread_id: str, llm: BaseChatModel | None = None
+) -> str:
+    """Work a started claim, putting it right if it fails, and report one line."""
     try:
         run_claim_agent(claim_id, thread_id, llm)
         problem = "The claim agent finished without recording a decision"
@@ -75,13 +84,6 @@ def work_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
     if claim["status"] == "left_for_handler":
         return f"{claim_id}  failed again: {problem}. Left for a handler."
     return f"{claim_id}  failed: {problem}. Back in the queue."
-
-
-@observe(name="work-claim", capture_input=False)
-def work_one_claim(claim_id: str, llm: BaseChatModel | None = None) -> str:
-    """Work one claim outside a run, as a trace of its own, and report one line."""
-    get_client().update_current_span(input=claim_id)
-    return work_claim(claim_id, llm)
 
 
 def show_claim_report(message: AnyMessage) -> None:

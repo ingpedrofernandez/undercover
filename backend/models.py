@@ -10,6 +10,18 @@ Status = Literal[
 DecisionKind = Literal["approve", "decline", "refer"]
 StepKind = Literal["tool_call", "tool_result", "message", "read", "error"]
 TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
+Benefit = Literal[
+    "trip_cancellation",
+    "trip_interruption",
+    "trip_delay",
+    "baggage_delay",
+    "baggage",
+    "passport",
+    "emergency_medical",
+]
+LineKind = Literal[
+    "item", "electronics", "cash", "expense", "hotel", "meals_without_receipts"
+]
 
 
 class Item(BaseModel):
@@ -200,3 +212,46 @@ class TodosRequest(BaseModel):
 
 class FinishRequest(BaseModel):
     summary: str = Field(min_length=1, description="A short summary for the handlers")
+
+
+class PayoutLine(BaseModel):
+    description: str = Field(min_length=1, description="What the item or expense is")
+    amount: float = Field(
+        ge=0,
+        description="The total claimed for the line in US dollars, before any limits",
+    )
+    quantity: int = Field(
+        ge=1,
+        description="How many separate items the line holds, 1 for a single item."
+        " A pair or a set is one item",
+    )
+    kind: LineKind
+    nights: int = Field(ge=0, description="For a hotel, the number of nights, else 0")
+    hours: float = Field(
+        ge=0,
+        description="For meals without receipts, the delay in hours, else 0",
+    )
+
+
+class PayoutRequest(BaseModel):
+    policy_id: str
+    benefit: Benefit
+    lines: list[PayoutLine] = Field(
+        description="The covered items and expenses, with any excluded ones left out"
+    )
+    paid_by_others: float = Field(
+        ge=0,
+        description="What a carrier, hotel or other party paid or refunded for the"
+        " same loss, 0 if nothing",
+    )
+
+
+class CalculationStep(BaseModel):
+    step: str
+    amount: float
+
+
+class Payout(BaseModel):
+    calculation: list[CalculationStep]
+    payout: float
+    needs_sign_off: bool

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.database import Database
 from backend.models import Handler, Policy, PreviousClaim
+from backend.policies import find_policy
 
 router = APIRouter(prefix="/api")
 
@@ -13,12 +14,7 @@ router = APIRouter(prefix="/api")
 @router.get("/policies/{policy_id}", operation_id="get_policy")
 def get_policy(policy_id: str, db: Database) -> Policy:
     """Get a policy: the plan, add-ons, purchase date, trip and travelers."""
-    row = db.execute(
-        "SELECT record FROM policies WHERE policy_id = ?", (policy_id,)
-    ).fetchone()
-    if row is None:
-        raise HTTPException(404, f"Policy {policy_id} not found")
-    return Policy(**json.loads(row["record"]))
+    return find_policy(db, policy_id)
 
 
 @router.get("/customers/{customer_id}/claims", operation_id="get_claim_history")

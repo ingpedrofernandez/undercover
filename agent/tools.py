@@ -7,13 +7,23 @@ from typing import Any, Literal
 
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent import api
 
 DOCUMENT_NAMES = {"policy_wording": "Policy wording", "claims_manual": "Claims manual"}
 
 Document = Literal["policy_wording", "claims_manual"]
+
+Benefit = Literal[
+    "trip_cancellation",
+    "trip_interruption",
+    "trip_delay",
+    "baggage_delay",
+    "baggage",
+    "passport",
+    "emergency_medical",
+]
 
 ONE_CLAIM_AT_A_TIME = threading.Lock()
 
@@ -23,6 +33,35 @@ class Todo(BaseModel):
 
     content: str
     status: Literal["to_do", "in_progress", "done", "left_for_handler"]
+
+
+class PayoutLine(BaseModel):
+    """One covered item or expense on a claim."""
+
+    description: str = Field(description="What the item or expense is")
+    amount: float = Field(
+        description="The total claimed for the line in US dollars, before any limits."
+        " For several items, the total for all of them"
+    )
+    quantity: int = Field(
+        description="How many separate items the line holds, such as 3 for three"
+        " shirts, or 1. A pair or a set is one item"
+    )
+    kind: Literal[
+        "item", "electronics", "cash", "expense", "hotel", "meals_without_receipts"
+    ] = Field(
+        description="item: a belonging, or a pair or set that counts as one item."
+        " electronics: only a phone, tablet, laptop, camera or its lens, e-reader or"
+        " smartwatch; any other device is an item. cash: cash that was lost or stolen."
+        " expense: any other cost with a receipt, such as a medical bill, a meal, a"
+        " taxi, a fee or a prepaid trip cost. hotel: a hotel during a trip delay."
+        " meals_without_receipts: meals during a trip delay with no receipts."
+    )
+    nights: int = Field(description="For a hotel, the number of nights, otherwise 0")
+    hours: float = Field(
+        description="For meals without receipts, the length of the delay in hours,"
+        " otherwise 0"
+    )
 
 
 @dataclass
@@ -71,6 +110,25 @@ def read_section(document: Document, section: int) -> str:
     found = api.read_section(document, section)
     name = DOCUMENT_NAMES[document]
     return f"{name}, section {section}: {found['title']}\n\n{found['text']}"
+
+
+@tool(parse_docstring=True)
+def calculate_payout(
+    policy_id: str, benefit: Benefit, lines: list[PayoutLine], paid_by_others: float
+) -> dict[str, Any]:
+    """Work out the payout on an approved claim with UnderCover's payout rules.
+
+    Args:
+        policy_id: The customer's policy id
+        benefit: The benefit the claim is paid under
+        lines: The covered items and expenses, one for each line of the claim, with
+            any excluded ones left out
+        paid_by_others: What a carrier, hotel or other party has paid or refunded
+            for the same loss, or 0
+    """
+    return api.calculate_payout(
+        policy_id, benefit, [line.model_dump() for line in lines], paid_by_others
+    )
 
 
 @tool
@@ -124,6 +182,7 @@ CLAIM_TOOLS = [
     list_sections,
     search_documents,
     read_section,
+    calculate_payout,
     record_decision,
     pay_claim,
 ]

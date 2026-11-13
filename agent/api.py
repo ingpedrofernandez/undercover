@@ -81,6 +81,19 @@ def record_step(claim_id: str, kind: str, content: str) -> dict[str, Any]:
     return call("POST", f"/api/claims/{claim_id}/steps", body)
 
 
+def calculate_payout(
+    policy_id: str, benefit: str, lines: list[dict[str, Any]], paid_by_others: float
+) -> dict[str, Any]:
+    """Work out the payout on an approved claim with UnderCover's payout rules."""
+    body = {
+        "policy_id": policy_id,
+        "benefit": benefit,
+        "lines": lines,
+        "paid_by_others": paid_by_others,
+    }
+    return call("POST", "/api/payouts", body)
+
+
 def record_decision(
     claim_id: str, decision: str, payout: float, section: str, reason: str
 ) -> dict[str, Any]:

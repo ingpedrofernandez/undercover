@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
@@ -77,6 +79,7 @@ def test_tools_are_named_after_backend_operations(client):
         "list_sections",
         "search_documents",
         "read_section",
+        "calculate_payout",
         "record_decision",
         "pay_claim",
     ]
@@ -122,6 +125,49 @@ def test_run_approves_and_pays_within_the_limit(client):
     assert steps[9]["content"] == 'pay_claim(claim_id="CLM-1001", amount=420.0)'
     assert steps[-1]["content"] == "Decision: approve."
     assert {s["thread_id"] for s in steps} == {"thread-1"}
+
+
+SUITCASE = {
+    "description": "Hard-shell suitcase",
+    "amount": 239.99,
+    "quantity": 1,
+    "kind": "item",
+    "nights": 0,
+    "hours": 0,
+}
+
+
+def test_the_payout_comes_from_the_payout_rules(client):
+    stub = StubModel(
+        messages=iter(
+            [
+                call(
+                    "calculate_payout",
+                    policy_id="POL-2007",
+                    benefit="baggage",
+                    lines=[SUITCASE],
+                    paid_by_others=0,
+                ),
+                decide("CLM-1007", "approve", 50.0),
+                AIMessage(content="Decision: approve."),
+            ]
+        )
+    )
+    start(client, "CLM-1007", "thread-7")
+    work.run_claim_agent("CLM-1007", "thread-7", stub)
+
+    worked_out = json.loads(stub.prompts[1][-1].text)
+    assert worked_out["payout"] == 50.0
+    assert worked_out["needs_sign_off"] is False
+    assert client.get("/api/claims/CLM-1007").json()["decision"]["payout"] == 50.0
+    steps = client.get("/api/claims/CLM-1007/steps").json()
+    assert steps[0]["content"] == (
+        'calculate_payout(policy_id="POL-2007", benefit="baggage",'
+        f" lines={json.dumps([SUITCASE])}, paid_by_others=0)"
+    )
+    assert steps[1]["content"].startswith("calculate_payout: {")
+    assert "Hard-shell suitcase, limited to $150.00" in steps[1]["content"]
+    assert "Less the deductible" in steps[1]["content"]
 
 
 def test_run_uses_the_instructions_from_the_backend(client):
@@ -227,7 +273,7 @@ def test_a_refused_read_is_an_ordinary_tool_result(client):
 def test_command_line_works_one_claim(monkeypatch, capsys):
     worked = []
     monkeypatch.setattr(
-        cli, "work_one_claim", lambda claim_id: worked.append(claim_id) or "A line."
+        cli, "work_claim", lambda claim_id: worked.append(claim_id) or "A line."
     )
     cli.main(["CLM-1001"])
     assert capsys.readouterr().out == "A line.\n"

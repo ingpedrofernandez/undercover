@@ -26,6 +26,7 @@ def traces():
 @pytest.fixture
 def spans(traces):
     """Return a function giving the spans traced during the test."""
+    get_client().flush()
     traces.clear()
 
     def traced():

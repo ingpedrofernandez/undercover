@@ -20,6 +20,7 @@ from backend.models import (
     Step,
     StepRequest,
 )
+from backend.settings import approval_limit, needs_sign_off
 
 TRIES = 2
 
@@ -29,11 +30,6 @@ router = APIRouter(prefix="/api/claims")
 def dollars(amount: float) -> str:
     """Format an amount like $1,250.00."""
     return f"${amount:,.2f}"
-
-
-def approval_limit(db: sqlite3.Connection) -> float:
-    """Return the largest payout that can be paid without a handler's sign-off."""
-    return db.execute("SELECT payout_approval_limit FROM settings").fetchone()[0]
 
 
 def find_claim(db: sqlite3.Connection, claim_id: str) -> sqlite3.Row:
@@ -175,7 +171,7 @@ def record_decision(claim_id: str, request: DecisionRequest, db: Database) -> Cl
     if find_claim(db, claim_id)["status"] != "in_progress":
         raise HTTPException(409, f"Claim {claim_id} is not in progress")
     payout = round(request.payout, 2)
-    held = request.decision == "approve" and payout > approval_limit(db)
+    held = request.decision == "approve" and needs_sign_off(db, payout)
     db.execute(
         "INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?)",
         (claim_id, request.decision, payout, request.section, request.reason, now()),
