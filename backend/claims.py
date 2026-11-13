@@ -1,11 +1,20 @@
 """The claims queue, and the work on each claim from start to payment."""
 
 import json
-import sqlite3
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import Connection, RowMapping, insert, select, update
 
-from backend.database import Database, now
+from backend.database import (
+    Database,
+    claims,
+    customers,
+    decisions,
+    handlers,
+    now,
+    payments,
+    steps,
+)
 from backend.models import (
     Claim,
     ClaimSummary,
@@ -17,6 +26,7 @@ from backend.models import (
     PaymentRequest,
     SignOffRequest,
     StartRequest,
+    Status,
     Step,
     StepRequest,
 )
@@ -26,23 +36,42 @@ TRIES = 2
 
 router = APIRouter(prefix="/api/claims")
 
+CLAIM = (
+    select(
+        claims.c.claim_id,
+        claims.c.record,
+        claims.c.status,
+        claims.c.thread_id,
+        customers.c.name.label("customer_name"),
+        decisions.c.decision,
+        decisions.c.payout,
+        decisions.c.section,
+        decisions.c.reason,
+        decisions.c.decided_at,
+        payments.c.amount,
+        payments.c.paid_at,
+        payments.c.signed_off_by,
+    )
+    .join_from(claims, customers, claims.c.customer_id == customers.c.customer_id)
+    .outerjoin(decisions, decisions.c.claim_id == claims.c.claim_id)
+    .outerjoin(payments, payments.c.claim_id == claims.c.claim_id)
+)
+
 
 def dollars(amount: float) -> str:
     """Format an amount like $1,250.00."""
     return f"${amount:,.2f}"
 
 
-def find_claim(db: sqlite3.Connection, claim_id: str) -> sqlite3.Row:
+def find_claim(db: Connection, claim_id: str) -> RowMapping:
     """Return one claim's row, or raise a 404."""
-    row = db.execute(
-        "SELECT * FROM claim_view WHERE claim_id = ?", (claim_id,)
-    ).fetchone()
+    row = db.execute(CLAIM.where(claims.c.claim_id == claim_id)).mappings().first()
     if row is None:
         raise HTTPException(404, f"Claim {claim_id} not found")
     return row
 
 
-def to_summary(row: sqlite3.Row) -> ClaimSummary:
+def to_summary(row: RowMapping) -> ClaimSummary:
     """Build a claim's line in the queue from its row."""
     return ClaimSummary(
         **json.loads(row["record"])
@@ -55,7 +84,7 @@ def to_summary(row: sqlite3.Row) -> ClaimSummary:
     )
 
 
-def to_claim(row: sqlite3.Row) -> Claim:
+def to_claim(row: RowMapping) -> Claim:
     """Build a claim in full, with its decision and payment, from its row."""
     decision = None
     if row["decision"] is not None:
@@ -75,34 +104,44 @@ def to_claim(row: sqlite3.Row) -> Claim:
     )
 
 
+def set_status(db: Connection, claim_id: str, status: Status) -> None:
+    """Move a claim to a new status."""
+    db.execute(
+        update(claims).where(claims.c.claim_id == claim_id).values(status=status)
+    )
+
+
 def pay(
-    db: sqlite3.Connection, claim_id: str, amount: float, signed_off_by: str | None
+    db: Connection, claim_id: str, amount: float, signed_off_by: str | None
 ) -> Payment:
     """Record a payment on a claim."""
     payment = Payment(amount=amount, paid_at=now(), signed_off_by=signed_off_by)
-    db.execute(
-        "INSERT INTO payments VALUES (?, ?, ?, ?)",
-        (claim_id, payment.amount, payment.paid_at, payment.signed_off_by),
-    )
+    db.execute(insert(payments).values(claim_id=claim_id, **payment.model_dump()))
     return payment
 
 
 def add_step(
-    db: sqlite3.Connection, claim_id: str, thread_id: str, kind: str, content: str
+    db: Connection, claim_id: str, thread_id: str, kind: str, content: str
 ) -> Step:
     """Add one step to a claim."""
     row = db.execute(
-        "INSERT INTO steps (claim_id, thread_id, kind, content, created_at)"
-        " VALUES (?, ?, ?, ?, ?) RETURNING *",
-        (claim_id, thread_id, kind, content, now()),
-    ).fetchone()
-    return Step(**dict(row))
+        insert(steps)
+        .values(
+            claim_id=claim_id,
+            thread_id=thread_id,
+            kind=kind,
+            content=content,
+            created_at=now(),
+        )
+        .returning(*steps.c)
+    )
+    return Step(**row.mappings().one())
 
 
 @router.get("", operation_id="list_claims")
 def list_claims(db: Database) -> list[ClaimSummary]:
     """List every claim in the queue, in id order."""
-    rows = db.execute("SELECT * FROM claim_view ORDER BY claim_id").fetchall()
+    rows = db.execute(CLAIM.order_by(claims.c.claim_id)).mappings()
     return [to_summary(row) for row in rows]
 
 
@@ -118,8 +157,9 @@ def start_claim(claim_id: str, request: StartRequest, db: Database) -> Claim:
     if find_claim(db, claim_id)["status"] != "waiting":
         raise HTTPException(409, f"Claim {claim_id} is not waiting")
     db.execute(
-        "UPDATE claims SET status = 'in_progress', thread_id = ? WHERE claim_id = ?",
-        (request.thread_id, claim_id),
+        update(claims)
+        .where(claims.c.claim_id == claim_id)
+        .values(status="in_progress", thread_id=request.thread_id)
     )
     return to_claim(find_claim(db, claim_id))
 
@@ -138,9 +178,9 @@ def list_steps(claim_id: str, db: Database) -> list[Step]:
     """List the steps of the agent's work on a claim, in order."""
     find_claim(db, claim_id)
     rows = db.execute(
-        "SELECT * FROM steps WHERE claim_id = ? ORDER BY step_id", (claim_id,)
-    ).fetchall()
-    return [Step(**dict(row)) for row in rows]
+        select(steps).where(steps.c.claim_id == claim_id).order_by(steps.c.step_id)
+    ).mappings()
+    return [Step(**row) for row in rows]
 
 
 @router.post("/{claim_id}/failure", operation_id="record_failure")
@@ -150,15 +190,13 @@ def record_failure(claim_id: str, request: FailureRequest, db: Database) -> Clai
     if claim["status"] != "in_progress":
         raise HTTPException(409, f"Claim {claim_id} is not in progress")
     failures = db.execute(
-        "UPDATE claims SET failures = failures + 1 WHERE claim_id = ?"
-        " RETURNING failures",
-        (claim_id,),
-    ).fetchone()[0]
+        update(claims)
+        .where(claims.c.claim_id == claim_id)
+        .values(failures=claims.c.failures + 1)
+        .returning(claims.c.failures)
+    ).scalar_one()
     left = failures >= TRIES
-    db.execute(
-        "UPDATE claims SET status = ? WHERE claim_id = ?",
-        ("left_for_handler" if left else "waiting", claim_id),
-    )
+    set_status(db, claim_id, "left_for_handler" if left else "waiting")
     note = "Left for a handler." if left else "Back in the queue."
     reason = request.reason.rstrip(".")
     add_step(db, claim_id, claim["thread_id"], "error", f"{reason}. {note}")
@@ -173,13 +211,16 @@ def record_decision(claim_id: str, request: DecisionRequest, db: Database) -> Cl
     payout = round(request.payout, 2)
     held = request.decision == "approve" and needs_sign_off(db, payout)
     db.execute(
-        "INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?)",
-        (claim_id, request.decision, payout, request.section, request.reason, now()),
+        insert(decisions).values(
+            claim_id=claim_id,
+            decision=request.decision,
+            payout=payout,
+            section=request.section,
+            reason=request.reason,
+            decided_at=now(),
+        )
     )
-    db.execute(
-        "UPDATE claims SET status = ? WHERE claim_id = ?",
-        ("waiting_for_sign_off" if held else "decided", claim_id),
-    )
+    set_status(db, claim_id, "waiting_for_sign_off" if held else "decided")
     return to_claim(find_claim(db, claim_id))
 
 
@@ -209,17 +250,19 @@ def sign_off_claim(claim_id: str, request: SignOffRequest, db: Database) -> Clai
     claim = find_claim(db, claim_id)
     if claim["status"] != "waiting_for_sign_off":
         raise HTTPException(409, f"Claim {claim_id} is not waiting for sign-off")
-    row = db.execute(
-        "SELECT * FROM handlers WHERE handler_id = ?", (request.handler_id,)
-    ).fetchone()
+    row = (
+        db.execute(select(handlers).where(handlers.c.handler_id == request.handler_id))
+        .mappings()
+        .first()
+    )
     if row is None:
         raise HTTPException(404, f"Handler {request.handler_id} not found")
-    handler = Handler(**dict(row))
+    handler = Handler(**row)
     if not handler.can_approve_over_limit:
         raise HTTPException(
             403,
             f"{handler.name} can't sign off payouts over {dollars(approval_limit(db))}",
         )
     pay(db, claim_id, claim["payout"], handler.name)
-    db.execute("UPDATE claims SET status = 'decided' WHERE claim_id = ?", (claim_id,))
+    set_status(db, claim_id, "decided")
     return to_claim(find_claim(db, claim_id))

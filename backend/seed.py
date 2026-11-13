@@ -1,12 +1,24 @@
 """Rebuild the database from data/, with: uv run -m backend.seed"""
 
 import json
-import sqlite3
-from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from backend.database import ROOT, SCHEMA, database_path
+from sqlalchemy import insert
+from sqlalchemy.schema import CreateSchema
+
+from backend.database import (
+    ROOT,
+    SCHEMA,
+    claims,
+    customers,
+    engine,
+    handlers,
+    metadata,
+    policies,
+    sections,
+    settings,
+)
 
 DATA = ROOT / "data"
 DOCUMENTS = {"policy_wording": "policy_wording.md", "claims_manual": "claims_manual.md"}
@@ -27,61 +39,99 @@ def split_sections(text: str) -> list[tuple[int, str, str]]:
     return found
 
 
-def seed(path: Path) -> dict[str, int]:
-    """Build a fresh database at path from data/ and count what it holds."""
-    company = load("company.json")
-    handlers = load("handlers.json")
-    customers = load("customers.json")
-    policies = load("policies.json")
-    claims = load("claims.json")
-    path.unlink(missing_ok=True)
-    with closing(sqlite3.connect(path)) as connection, connection:
-        connection.executescript(SCHEMA)
-        connection.execute(
-            "INSERT INTO settings VALUES (?)", (company["payout_approval_limit"],)
+def document_sections() -> list[dict[str, Any]]:
+    """Return the sections of the policy wording and the claims manual as rows."""
+    return [
+        {"document": document, "section": number, "title": title, "text": text}
+        for document, name in DOCUMENTS.items()
+        for number, title, text in split_sections(
+            (DATA / name).read_text(encoding="utf-8")
         )
-        connection.executemany(
-            "INSERT INTO handlers VALUES (?, ?, ?, ?)",
+    ]
+
+
+def seed() -> dict[str, int]:
+    """Rebuild our tables from data/ and count what they hold.
+
+    On Supabase the undercover schema is made if it's missing, and the
+    checkpointer's tables in it are left alone.
+    """
+    company = load("company.json")
+    handler_rows = load("handlers.json")
+    customer_rows = load("customers.json")
+    policy_rows = load("policies.json")
+    claim_rows = load("claims.json")
+    database = engine()
+    with database.begin() as db:
+        if database.dialect.name == "postgresql":
+            db.execute(CreateSchema(SCHEMA, if_not_exists=True))
+        metadata.drop_all(db)
+        metadata.create_all(db)
+        db.execute(
+            insert(settings),
+            [{"payout_approval_limit": company["payout_approval_limit"]}],
+        )
+        db.execute(
+            insert(handlers),
             [
-                (h["handler_id"], h["name"], h["role"], h["can_approve_over_limit"])
-                for h in handlers
+                {column.name: h[column.name] for column in handlers.c}
+                for h in handler_rows
             ],
         )
-        connection.executemany(
-            "INSERT INTO customers VALUES (?, ?, ?)",
-            [(c["customer_id"], c["name"], json.dumps(c)) for c in customers],
+        db.execute(
+            insert(customers),
+            [
+                {
+                    "customer_id": c["customer_id"],
+                    "name": c["name"],
+                    "record": json.dumps(c),
+                }
+                for c in customer_rows
+            ],
         )
-        connection.executemany(
-            "INSERT INTO policies VALUES (?, ?)",
-            [(p["policy_id"], json.dumps(p)) for p in policies],
+        db.execute(
+            insert(policies),
+            [
+                {"policy_id": p["policy_id"], "record": json.dumps(p)}
+                for p in policy_rows
+            ],
         )
-        connection.executemany(
-            "INSERT INTO claims (claim_id, customer_id, record, status)"
-            " VALUES (?, ?, ?, 'waiting')",
-            [(c["claim_id"], c["customer_id"], json.dumps(c)) for c in claims],
+        db.execute(
+            insert(claims),
+            [
+                {
+                    "claim_id": c["claim_id"],
+                    "customer_id": c["customer_id"],
+                    "record": json.dumps(c),
+                    "status": "waiting",
+                }
+                for c in claim_rows
+            ],
         )
-        for document, name in DOCUMENTS.items():
-            text = (DATA / name).read_text(encoding="utf-8")
-            connection.executemany(
-                "INSERT INTO sections VALUES (?, ?, ?, ?)",
-                [(document, *section) for section in split_sections(text)],
-            )
+        db.execute(insert(sections), document_sections())
     return {
-        "claims": len(claims),
-        "policies": len(policies),
-        "customers": len(customers),
-        "handlers": len(handlers),
+        "claims": len(claim_rows),
+        "policies": len(policy_rows),
+        "customers": len(customer_rows),
+        "handlers": len(handler_rows),
     }
+
+
+def where() -> str:
+    """Name the database being seeded: SQLite's file, or the schema and its host."""
+    url = engine().url
+    if url.drivername == "sqlite":
+        return Path(str(url.database)).name
+    return f"the {SCHEMA} schema on {url.host}"
 
 
 def main() -> None:
     """Rebuild the database and say what it holds."""
-    path = database_path()
-    counts = seed(path)
+    counts = seed()
     print(
         f"Seeded {counts['claims']} claims, {counts['policies']} policies, "
         f"{counts['customers']} customers and {counts['handlers']} handlers "
-        f"into {path.name}"
+        f"into {where()}"
     )
 
 

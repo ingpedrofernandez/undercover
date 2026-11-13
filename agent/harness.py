@@ -7,7 +7,6 @@ from functools import cache
 from typing import Any
 from uuid import UUID
 
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -31,8 +30,6 @@ from pydantic import SecretStr
 
 from agent import api
 from agent.tools import CLAIM_TOOLS, QUEUE_TOOLS, RunContext
-
-load_dotenv(override=True)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"

@@ -4,17 +4,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import inspect
 
 from backend import claims, documents, payouts, records, runs
-from backend.database import database_path
+from backend.database import engine
 from backend.seed import seed
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Seed the database on startup if it doesn't exist yet."""
-    if not database_path().exists():
-        seed(database_path())
+    """Seed the database on startup if it has no claims yet."""
+    if not inspect(engine()).has_table("claims"):
+        seed()
     yield
 
 

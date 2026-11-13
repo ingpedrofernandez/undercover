@@ -3,8 +3,9 @@
 import json
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
-from backend.database import Database
+from backend.database import Database, customers, handlers
 from backend.models import Handler, Policy, PreviousClaim
 from backend.policies import find_policy
 
@@ -20,18 +21,16 @@ def get_policy(policy_id: str, db: Database) -> Policy:
 @router.get("/customers/{customer_id}/claims", operation_id="get_claim_history")
 def get_claim_history(customer_id: str, db: Database) -> list[PreviousClaim]:
     """Get a customer's earlier claims, with the outcome and the amount paid."""
-    row = db.execute(
-        "SELECT record FROM customers WHERE customer_id = ?", (customer_id,)
-    ).fetchone()
-    if row is None:
+    record = db.execute(
+        select(customers.c.record).where(customers.c.customer_id == customer_id)
+    ).scalar_one_or_none()
+    if record is None:
         raise HTTPException(404, f"Customer {customer_id} not found")
-    return [
-        PreviousClaim(**claim) for claim in json.loads(row["record"])["previous_claims"]
-    ]
+    return [PreviousClaim(**claim) for claim in json.loads(record)["previous_claims"]]
 
 
 @router.get("/handlers", operation_id="list_handlers")
 def list_handlers(db: Database) -> list[Handler]:
     """List the claims handlers."""
-    rows = db.execute("SELECT * FROM handlers ORDER BY handler_id").fetchall()
-    return [Handler(**dict(row)) for row in rows]
+    rows = db.execute(select(handlers).order_by(handlers.c.handler_id)).mappings()
+    return [Handler(**row) for row in rows]

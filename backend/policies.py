@@ -1,18 +1,19 @@
 """Finding a customer's policy, for any router that needs one."""
 
 import json
-import sqlite3
 
 from fastapi import HTTPException
+from sqlalchemy import Connection, select
 
+from backend.database import policies
 from backend.models import Policy
 
 
-def find_policy(db: sqlite3.Connection, policy_id: str) -> Policy:
+def find_policy(db: Connection, policy_id: str) -> Policy:
     """Return one policy, or raise a 404."""
-    row = db.execute(
-        "SELECT record FROM policies WHERE policy_id = ?", (policy_id,)
-    ).fetchone()
-    if row is None:
+    record = db.execute(
+        select(policies.c.record).where(policies.c.policy_id == policy_id)
+    ).scalar_one_or_none()
+    if record is None:
         raise HTTPException(404, f"Policy {policy_id} not found")
-    return Policy(**json.loads(row["record"]))
+    return Policy(**json.loads(record))

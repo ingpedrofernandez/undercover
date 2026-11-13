@@ -9,8 +9,9 @@ from backend.seed import seed
 def database(tmp_path, monkeypatch):
     """Give every test its own freshly seeded database."""
     path = tmp_path / "undercover.db"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("UNDERCOVER_DB", str(path))
-    seed(path)
+    seed()
     return path
 
 

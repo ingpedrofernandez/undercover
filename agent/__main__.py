@@ -5,6 +5,8 @@ import sys
 from io import TextIOWrapper
 from typing import cast
 
+from dotenv import load_dotenv
+
 from agent import api
 from agent.work import run_queue, work_claim
 
@@ -32,6 +34,7 @@ def main(args: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    load_dotenv(override=True)
     # Windows writes piped output in its legacy code page, which can't hold
     # every character a model replies with.
     cast(TextIOWrapper, sys.stdout).reconfigure(encoding="utf-8")

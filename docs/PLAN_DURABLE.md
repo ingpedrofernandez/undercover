@@ -112,7 +112,8 @@ The backend reaches it through `backend/agent_client.py`, the one place that kno
 ### The database
 
 - **One set of queries.** `backend/database.py` declares the tables once with SQLAlchemy Core, and every router writes its queries with Core. The SQLite view `claim_view` becomes one Core `select` in `claims.py`. Timestamps stay ISO text and records stay JSON text, so rows look the same on both databases.
-- **Which database.** `engine()` builds a `postgresql+psycopg` engine from `DATABASE_URL` when it's in the environment, and otherwise SQLite at `UNDERCOVER_DB` or `undercover.db`. On Postgres, `connect_args={"options": "-c search_path=undercover"}` puts every query in the `undercover` schema, so the same queries work on SQLite, and `pool_size=4, max_overflow=0` caps the connections.
+- **Which database.** `engine()` builds a `postgresql+psycopg` engine from `DATABASE_URL` when it's in the environment, and otherwise SQLite at `UNDERCOVER_DB` or `undercover.db`. On Postgres, `connect_args={"options": "-c search_path=undercover"}` puts every query in the `undercover` schema, so the same queries work on SQLite, and `pool_size=4, max_overflow=0` caps the connections. SQLite opens the file for each request (`NullPool`), as before, so the file can be replaced while the backend runs.
+- **Waiting for a connection.** A request holds its connection across more than one of FastAPI's threads: the endpoint runs in one, and its response is checked in another before the request's connection is committed and returned. When requests waited for one of the four connections inside a thread, 50 requests at once took every thread while the four holding connections waited for one, and a quarter of them timed out after 30 seconds. So `database()` depends on `connection_slot()`, which waits on a semaphore of four without holding a thread.
 - **Who gets `.env`.** The backend reads no `.env` itself. `npm run dev` and `npm run seed` pass it with `uv run --env-file .env`. The tests and Playwright never do, so they stay on SQLite with no network.
 - **Seeding.** On Postgres, seeding creates the `undercover` schema if it's missing, drops our tables, creates them again and fills them. It leaves the checkpointer's tables alone: every try has a new thread id, so an old thread is never picked up again. The backend seeds on startup when the database has no `claims` table.
 - **New columns.** `decisions.signed_off_by` and `decisions.signed_off_at` hold the sign-off. `payments.signed_off_at` joins `payments.signed_off_by`, so the payment records who signed off and when.
@@ -161,7 +162,7 @@ The agent's modules still depend on each other in one direction: `api` ← `tool
 
 | Module | | Its one job | Imports |
 | --- | --- | --- | --- |
-| `backend/database.py` | changed | The tables in SQLAlchemy Core, the engine for SQLite or Supabase, and a connection for each request | `sqlalchemy`, `fastapi` |
+| `backend/database.py` | changed | The tables in SQLAlchemy Core, the engine for SQLite or Supabase, and a connection for each request | `sqlalchemy`, `fastapi`, `anyio` |
 | `backend/settings.py` | new | UnderCover's settings from the database: the approval limit | `database` |
 | `backend/payout_rules.py` | new | The payout rules, as plain functions | `models`, `data/plans.json` |
 | `backend/policies.py` | new | Finds a policy, for the two routers that need one | `database`, `models` |
@@ -228,16 +229,16 @@ Bring the payout rules into the backend as `calculate_payout`, and give the clai
 
 `uv add sqlalchemy`. Rewrite `database.py` with Core tables and the engine for SQLite or Supabase, and every query in Core. Seed either database. Move loading `.env` out of the harness. `npm run dev` passes `.env` to the backend, and `npm run seed` reseeds Supabase.
 
-- [ ] Every existing backend and agent test passes on SQLite, unchanged apart from the fixtures
-- [ ] pytest: with no `DATABASE_URL`, the engine is SQLite at `UNDERCOVER_DB`. With `DATABASE_URL` set to a Postgres URL, it's a `postgresql+psycopg` engine with a pool of 4, no overflow and `search_path=undercover`, built without connecting
-- [ ] `grep -rn "sqlite3" backend --include=*.py` finds nothing outside the tests, and no router passes SQL text to `execute`
-- [ ] `grep -rn load_dotenv agent backend` finds it only under `agent/__main__.py`'s `if __name__ == "__main__":`
-- [ ] `npm run seed` prints the seeded counts. Through the Supabase MCP server, the `undercover` schema holds `claims`, `customers`, `decisions`, `handlers`, `payments`, `policies`, `runs`, `sections`, `settings` and `steps`, with 25 claims all waiting, and `lab` is untouched
-- [ ] `npm run seed` a second time works and leaves 25 waiting claims
-- [ ] With `npm run dev`: `curl -s localhost:8000/api/claims` returns 25 claims. Starting `CLM-1001` and recording a step with `curl` shows both in Supabase through the MCP server, and `npm run seed` puts them back
-- [ ] With `npm run dev` and a burst of 50 parallel requests, the backend adds at most 4 connections to the `postgres` connections in `pg_stat_activity`
-- [ ] With `.env` in place, `npm run check` passes and leaves `undercover.steps` in Supabase as it was. With `.env` moved out of the way, `npm run check` passes
-- [ ] `npm run check` passes
+- [x] Every existing backend and agent test passes on SQLite, unchanged apart from the fixtures
+- [x] pytest: with no `DATABASE_URL`, the engine is SQLite at `UNDERCOVER_DB`. With `DATABASE_URL` set to a Postgres URL, it's a `postgresql+psycopg` engine with a pool of 4, no overflow and `search_path=undercover`, built without connecting
+- [x] `grep -rn "sqlite3" backend --include=*.py` finds nothing outside the tests, and no router passes SQL text to `execute`
+- [x] `grep -rn load_dotenv agent backend` finds it only in `agent/__main__.py`: the import at the top, and the call under `if __name__ == "__main__":`
+- [x] `npm run seed` prints the seeded counts. Through the Supabase MCP server, the `undercover` schema holds `claims`, `customers`, `decisions`, `handlers`, `payments`, `policies`, `runs`, `sections`, `settings` and `steps`, with 25 claims all waiting, and `lab` is untouched
+- [x] `npm run seed` a second time works and leaves 25 waiting claims
+- [x] With `npm run dev`: `curl -s localhost:8000/api/claims` returns 25 claims. Starting `CLM-1001` and recording a step with `curl` shows both in Supabase through the MCP server, and `npm run seed` puts them back
+- [x] With `npm run dev` and a burst of 50 parallel requests, the backend adds at most 4 connections to the `postgres` connections in `pg_stat_activity`
+- [x] With `.env` in place, `npm run check` passes and leaves `undercover.steps` in Supabase as it was. With `.env` moved out of the way, `npm run check` passes
+- [x] `npm run check` passes
 
 ## Phase 3: Waiting, paying and nothing twice, in the backend
 
