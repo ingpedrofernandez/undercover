@@ -25,6 +25,8 @@ The agent organizes its own work. We start it once and it works every waiting cl
 - It plans the run as a to-do list and keeps it up to date, with each item to do, in progress, done or left for a handler.
 - It hands each claim to a helper, a claim agent that works that one claim from a clean start and reports back in a line: the decision and payout, or what went wrong. Every step on a claim is recorded on that claim.
 - Problems are put right without anyone stepping in. One bad claim never stops the run or leaves a claim stuck in progress. A claim that fails before it is decided goes back in the queue to be tried again, and a claim that fails twice is left for a handler. Before it finishes, the agent checks that it has not missed a waiting claim within its cap.
+- A payout that needs a handler's sign-off waits for one. The claim agent stops at that point and keeps its place. As soon as a handler signs off on the dashboard, the agent picks the claim back up and pays it, and the claim page shows who signed off and when.
+- Every step on a claim is saved as it happens. If the agent is stopped partway, by a crash, a restart or Ctrl-C, its next run carries each claim it left in progress on from where it stopped, as the same try rather than a new one, and finishes the stopped run with a summary saying so.
 
 ## What the team needs to see
 

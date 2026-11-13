@@ -302,15 +302,15 @@ Build `agent/service.py`, and have `npm run dev` start it on port 8002 with `.en
 
 Run the whole product on the real model against Supabase, capped at five claims, sign off on the dashboard, kill a run partway, and bring the docs up to date.
 
-- [ ] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent --limit 5` prints five claim lines and a summary
-- [ ] Live: afterwards, `curl -s localhost:8000/api/claims` shows five claims worked, 20 waiting and none in progress. Every approval over $1,000 is waiting for sign-off with no payment, and every other approval is paid exactly its payout
-- [ ] Live: checked several times during the run through the Supabase MCP server, `pg_stat_activity` never shows more than 12 connections whose user is `postgres`
-- [ ] Live, in the browser: on a claim waiting for sign-off, signing off as Dana Whitfield through the Playwright MCP server shows it Decided within five seconds, without a reload, with "Paid", the amount, "signed off by Dana Whitfield" and the time. `browser_console_messages` shows no errors
-- [ ] Live: through Langfuse's API, that claim's session holds a trace from before the sign-off and one from after it
-- [ ] Live: after `npm run seed`, `uv run -m agent --limit 1` is stopped with Ctrl-C once its claim's page shows its first steps. The claim stays in progress and the run unfinished
-- [ ] Live: the next `uv run -m agent --limit 1` finishes the stopped run with a summary saying it was stopped, and carries on with that claim on the same thread: no `error` step, no new try, the steps from before kept, and one decision
-- [ ] `docs/SPEC.md`'s section on working the queue describes the wait for a sign-off and carrying on after a stop, and its Rules are unchanged. `docs/TECH_STACK.md`, `docs/PROCESS.md` and `docs/STATUS.md` describe the product as it now is, including these live runs
-- [ ] With `.env` moved out of the way, `npm run check` passes
+- [x] Live: after `npm run seed`, with `npm run dev` running, `uv run -m agent --limit 5` prints five claim lines and a summary
+- [x] Live: afterwards, `curl -s localhost:8000/api/claims` shows five claims worked, 20 waiting and none in progress. Every approval over $1,000 is waiting for sign-off with no payment, and every other approval is paid exactly its payout
+- [x] Live: checked several times during the run through the Supabase MCP server, `pg_stat_activity` never shows more than 12 connections whose user is `postgres`
+- [x] Live, in the browser: on a claim waiting for sign-off, signing off as Dana Whitfield through the Playwright MCP server shows it Decided within five seconds, without a reload, with "Paid", the amount, "signed off by Dana Whitfield" and the time. `browser_console_messages` shows no errors
+- [x] Live: through Langfuse's API, that claim's session holds a trace from before the sign-off and one from after it
+- [x] Live: after `npm run seed`, `uv run -m agent --limit 1` is stopped once its claim's page shows its first steps, by killing its process tree with `taskkill /F` as a crash would, since Ctrl-C can't be sent to a process started in the background. The claim stays in progress and the run unfinished
+- [x] Live: the next `uv run -m agent --limit 1` finishes the stopped run with a summary saying it was stopped, and carries on with that claim on the same thread: no `error` step, no new try, the steps from before kept, and one decision
+- [x] `docs/SPEC.md`'s section on working the queue describes the wait for a sign-off and carrying on after a stop, and its Rules are unchanged. `docs/TECH_STACK.md`, `docs/PROCESS.md` and `docs/STATUS.md` describe the product as it now is, including these live runs
+- [x] With `.env` moved out of the way, `npm run check` passes
 
 ## Not in this plan
 
