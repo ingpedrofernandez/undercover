@@ -90,7 +90,7 @@ function EvaluationsTable({
       <tbody>
         {evaluations.map((evaluation) => (
           <tr key={evaluation.run_id}>
-            <td>
+            <td className="nowrap">
               <Link to={`/evaluations/${String(evaluation.run_id)}`}>
                 Evaluation {evaluation.run_id}
               </Link>

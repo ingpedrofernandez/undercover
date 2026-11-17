@@ -20,21 +20,27 @@ Our goal is to handle claims straight through, as accurately as our handlers do.
 
 ## Working the queue
 
-The agent organizes its own work. We start it once and it works every waiting claim, choosing the order itself, then finishes with a short summary for the handlers. For trials we can cap a run at a number of claims, leaving the rest waiting, and we can run it on one named claim.
+Claims arrive in batches, so the agent works many at once. A handler starts a dispatch on the queue page and chooses how many claim agents work at the same time, from 1 to 25. A dispatch carries on every claim left in progress and works every waiting claim, oldest submitted first. Choosing the claims is a fixed rule, so code does it, with no model. Only one dispatch or evaluation runs at a time, and a second start is refused while one is running. We can also run the agent on one named claim.
 
-- It plans the run as a to-do list and keeps it up to date, with each item to do, in progress, done or left for a handler.
-- It hands each claim to a helper, a claim agent that works that one claim from a clean start and reports back in a line: the decision and payout, or what went wrong. Every step on a claim is recorded on that claim.
-- Problems are put right without anyone stepping in. One bad claim never stops the run or leaves a claim stuck in progress. A claim that fails before it is decided goes back in the queue to be tried again, and a claim that fails twice is left for a handler. Before it finishes, the agent checks that it has not missed a waiting claim within its cap.
+- Each claim is worked by a claim agent from a clean start, as a handler would, and every step on a claim is recorded on that claim.
+- Problems are put right without anyone stepping in. A claim that hits a rate limit or a timeout waits and carries on from where it got to, as the same try, and one still hitting them after its waits stays in progress for the next dispatch. A claim that fails with any other error goes back in the queue and the same dispatch tries it once more, and a claim that fails twice is left for a handler. One bad claim never stops a dispatch.
 - A payout that needs a handler's sign-off waits for one. The claim agent stops at that point and keeps its place. As soon as a handler signs off on the dashboard, the agent picks the claim back up and pays it, and the claim page shows who signed off and when.
-- Every step on a claim is saved as it happens. If the agent is stopped partway, by a crash, a restart or Ctrl-C, its next run carries each claim it left in progress on from where it stopped, as the same try rather than a new one, and finishes the stopped run with a summary saying so.
+- Every step on a claim is saved as it happens. If the agent is stopped partway, by a crash or a restart, the dispatch shows as stopped, and the next dispatch carries each claim it left in progress on from where it stopped, as the same try rather than a new one.
+- When a dispatch finishes, it is summed up from our records, with no model writing it: how many claims were approved, declined and referred, each payout waiting for a sign-off, and each claim left for a handler or still in progress.
+- The tokens and cost of every model call, and the time the agent spends on each claim, leaving out any wait for a sign-off, are recorded with the dispatch or evaluation they happened in.
+
+## Checking the agent's work
+
+On the Scoreboard a handler runs an evaluation: the agent works copies of one of our two labelled sets, whole or just its five tiny claims, with the same claim agents as a dispatch. The copies never show in the queue, a dispatch never carries them on, and nobody signs them off, so a held approval counts as finished. Each evaluation is scored against our handlers' decisions from our own records: how often the decision matches, how often the payout is right too, what the mistakes would cost, how many claims go straight through, and the model cost and time per claim.
 
 ## What the team needs to see
 
 - The queue, with where each claim stands: waiting, in progress, waiting for sign-off, decided or left for a handler.
-- The agent's to-do list for the current run, and its summary when the run finishes.
+- The latest dispatch: each of its claims and where it stands, its model cost and time, and its summary when it finishes.
 - Each claim in full, with the agent's decision and its reasons.
 - What the agent is doing on a claim while it works, step by step, which sections of the wording and the manual it read, and any try that failed.
-- The agent's instructions for running the queue and for working a claim, read only. They are written from the policy wording and the claims manual, never from our handlers' decisions.
+- The scoreboard: every evaluation with its measures, and each one's claims with our handler's decision beside the agent's, the misses easy to spot.
+- The claim agent's instructions, read only. They are written from the policy wording and the claims manual, never from our handlers' decisions.
 
 ## Rules
 

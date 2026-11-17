@@ -292,6 +292,10 @@ p {
   font-weight: 600;
 }
 
+.table .reason-cell {
+  min-width: 36ch;
+}
+
 .table .num {
   text-align: right;
   white-space: nowrap;

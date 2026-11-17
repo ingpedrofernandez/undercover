@@ -28,7 +28,7 @@ export function EvaluationPage() {
   return (
     <>
       <h1>Evaluation {evaluation.run_id}</h1>
-      <p className="muted">
+      <p className="lead">
         {setName(evaluation)}, {evaluation.agents} claim agents at once,{" "}
         {evaluation.model} ({evaluation.reasoning_effort}), started at{" "}
         {time(evaluation.started_at)}. {runStatusLabels[evaluation.status]}.
@@ -90,7 +90,7 @@ function ClaimsTable({ claims }: Readonly<{ claims: ScoredClaim[] }>) {
           <th>Result</th>
           <th>Handler</th>
           <th>Agent</th>
-          <th>Agent's reason</th>
+          <th className="reason-cell">Agent's reason</th>
           <th className="num">Cost of mistake</th>
           <th className="num">Time</th>
           <th className="num">Cost</th>
@@ -119,7 +119,7 @@ function ClaimsTable({ claims }: Readonly<{ claims: ScoredClaim[] }>) {
               <td>
                 <Answer decision={claim.decision} payout={claim.payout} />
               </td>
-              <td className="small">{claim.reason}</td>
+              <td className="small reason-cell">{claim.reason}</td>
               <td className="num mono">{money(claim.mistake_cost)}</td>
               <td className="num mono">{duration(claim.seconds)}</td>
               <td className="num mono">{cost(claim.cost)}</td>

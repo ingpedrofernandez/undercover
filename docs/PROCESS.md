@@ -1,6 +1,6 @@
 # Process
 
-`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend on port 8000 and the agent's service on port 8002, both with `.env` so their records and checkpoints are in Supabase, and the dashboard on http://localhost:5173. `npm run seed` rebuilds the backend's records in Supabase from `data/`, leaving the checkpoints. The tests never read `.env`: they run on SQLite and keep checkpoints in memory.
+`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend on port 8000 and the agent's service on port 8002, both with `.env` so their records and checkpoints are in Supabase, and the dashboard on http://localhost:5173. `npm run seed` rebuilds the backend's records in Supabase from `data/`, empties the scoreboard and leaves the checkpoints. It reads the held-out claims and the handlers' decisions from `data/evals/` into tables of their own, which no claim operation reads. A handler starts dispatches on the queue page and evaluations on the Scoreboard; `uv run -m agent CLM-1001` works one claim. The tests never read `.env`: they run on SQLite and keep checkpoints in memory.
 
 `npm run check` runs every check:
 
@@ -45,4 +45,5 @@ When the last phase is done, run `npm run check` and report the results.
 - Keep `docs/STATUS.md` up to date.
 - Never push.
 - Don't open `data/evals/` unless you're asked to.
+- A live run with the real model reseeds once first and keeps to the runs its plan names. Dispatches and evaluations replace the five-claim cap of earlier plans.
 - Everything must work on Windows: write `package.json` scripts as `uv run` commands or `.mjs` files.
