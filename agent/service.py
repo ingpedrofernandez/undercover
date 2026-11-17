@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI
 
-from agent import harness, work
+from agent import harness
 
 ONE_CLAIM_AT_A_TIME = threading.Lock()
 
@@ -27,7 +27,7 @@ app = FastAPI(title="UnderCover Agent", lifespan=lifespan)
 def resume(claim_id: str) -> None:
     """Carry a claim on, one claim at a time, and print its line."""
     with ONE_CLAIM_AT_A_TIME:
-        print(work.carry_on(claim_id), flush=True)
+        print(harness.work_claim(claim_id, None), flush=True)
 
 
 @app.post("/api/claims/{claim_id}/resume", operation_id="resume_claim", status_code=202)

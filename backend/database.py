@@ -111,6 +111,26 @@ runs = Table(
     Column("summary", Text),
     Column("todos", Text, nullable=False, server_default="[]"),
 )
+model_calls = Table(
+    "model_calls",
+    metadata,
+    Column("call_id", Integer, primary_key=True),
+    Column("claim_id", Text, ForeignKey("claims.claim_id"), nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.run_id")),
+    Column("input_tokens", Integer, nullable=False),
+    Column("output_tokens", Integer, nullable=False),
+    Column("cost", Float, nullable=False),
+    Column("created_at", Text, nullable=False),
+)
+work_times = Table(
+    "work_times",
+    metadata,
+    Column("work_id", Integer, primary_key=True),
+    Column("claim_id", Text, ForeignKey("claims.claim_id"), nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.run_id")),
+    Column("started_at", Text, nullable=False),
+    Column("seconds", Float, nullable=False),
+)
 sections = Table(
     "sections",
     metadata,

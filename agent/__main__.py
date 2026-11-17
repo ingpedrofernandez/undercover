@@ -10,8 +10,8 @@ from typing import cast
 
 from dotenv import load_dotenv
 
-from agent import api
-from agent.work import catch_up, run_queue, work_one_claim
+from agent import api, harness
+from agent.work import catch_up, run_queue
 
 
 def main(args: list[str]) -> None:
@@ -24,7 +24,7 @@ def main(args: list[str]) -> None:
     options = parser.parse_args(args)
     if options.claim_id:
         try:
-            print(work_one_claim(options.claim_id))
+            print(harness.work_claim(options.claim_id, None))
         except api.ApiError as error:
             print(f"{options.claim_id}  not started: {error}")
         return

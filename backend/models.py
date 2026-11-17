@@ -217,6 +217,37 @@ class FinishRequest(BaseModel):
     summary: str = Field(min_length=1, description="A short summary for the handlers")
 
 
+class ModelCallRequest(BaseModel):
+    run_id: int | None = Field(description="The run the call was made in, or null")
+    input_tokens: int = Field(ge=0, description="The prompt's tokens")
+    output_tokens: int = Field(ge=0, description="The reply's tokens")
+    cost: float = Field(ge=0, description="What OpenRouter charged, in US dollars")
+
+
+class ModelCall(BaseModel):
+    call_id: int
+    claim_id: str
+    run_id: int | None
+    input_tokens: int
+    output_tokens: int
+    cost: float
+    created_at: str
+
+
+class WorkTimeRequest(BaseModel):
+    run_id: int | None = Field(description="The run the work was done in, or null")
+    started_at: str = Field(min_length=1, description="When the work started")
+    seconds: float = Field(ge=0, description="How long the agent worked")
+
+
+class WorkTime(BaseModel):
+    work_id: int
+    claim_id: str
+    run_id: int | None
+    started_at: str
+    seconds: float
+
+
 class PayoutLine(BaseModel):
     description: str = Field(min_length=1, description="What the item or expense is")
     amount: float = Field(

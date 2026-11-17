@@ -34,7 +34,7 @@ class ClaimAgents:
         self.worked: list[str] = []
         self.busy = threading.Lock()
 
-    def __call__(self, graph, start, thread_id):
+    def __call__(self, graph, start, thread_id, run_id):
         assert self.busy.acquire(blocking=False), "two claims worked at once"
         claim_id = start["claim_id"]
         try:

@@ -1,12 +1,18 @@
 """The harness around both agents: the model, the claim graph and its checkpointer,
-the queue agent and its middleware, tracing, and running them."""
+the queue agent and its middleware, tracing, and running them.
+
+work_claim is the one way to work a claim with the claim agent."""
 
 import contextvars
 import json
 import os
+import time
+import uuid
 from collections.abc import Callable
-from functools import cache
-from typing import Annotated, Any, NotRequired, TypedDict
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from functools import cache, partial
+from typing import Annotated, Any, NotRequired, TypedDict, cast
 from uuid import UUID
 
 from langchain.agents import create_agent
@@ -50,7 +56,7 @@ from agent import api
 from agent.tools import CLAIM_TOOLS, QUEUE_TOOLS, RunContext
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
+DEFAULT_MODEL = "openai/gpt-6-luna"
 TIMEOUT_SECONDS = 120
 RETRIES = 2
 RETRY_DELAY_SECONDS = 1.0
@@ -62,18 +68,25 @@ CONNECTIONS = 4
 Agent = CompiledStateGraph[Any, Any, Any, Any]
 
 
+def model_settings() -> tuple[str, str]:
+    """Return the model's name and reasoning effort: GPT-6 Luna at low by default,
+    or the model named in MODEL_NAME with none."""
+    name = os.getenv("MODEL_NAME")
+    return (name, "none") if name else (DEFAULT_MODEL, "low")
+
+
 def model() -> ChatDeepSeek:
-    """Return the model named in MODEL_NAME, or DeepSeek V4.1 Flash by default.
+    """Return the model in model_settings, through OpenRouter.
 
     ChatDeepSeek keeps the reasoning OpenRouter sends, which ChatOpenAI drops,
     so the traces show why the model did what it did.
     """
-    name = os.getenv("MODEL_NAME")
+    name, effort = model_settings()
     return ChatDeepSeek(
-        model=name or DEFAULT_MODEL,
+        model=name,
         base_url=OPENROUTER_BASE_URL,
         api_key=SecretStr(os.environ["OPENROUTER_API_KEY"]),
-        reasoning_effort=None if name else "low",
+        reasoning_effort=None if effort == "none" else effort,
         timeout=TIMEOUT_SECONDS,
         max_retries=0,
     )
@@ -119,8 +132,27 @@ class ClaimState(TypedDict):
     signed_off_by: NotRequired[str]
 
 
+@dataclass
+class ClaimContext:
+    """What one run of the claim graph knows besides its state: the run it is in."""
+
+    run_id: int | None
+
+
 class ModelCallLimitExceeded(Exception):
     """A claim agent used all its model calls without finishing."""
+
+
+def record_model_call(claim_id: str, run_id: int | None, reply: AnyMessage) -> None:
+    """Record the tokens and cost OpenRouter reports for one model reply."""
+    usage = reply.response_metadata["token_usage"]
+    api.record_model_call(
+        claim_id,
+        run_id,
+        usage["prompt_tokens"],
+        usage["completion_tokens"],
+        usage["cost"],
+    )
 
 
 def tool_error(error: api.ApiError | ToolInvocationError) -> str:
@@ -182,8 +214,9 @@ def claim_graph(llm: BaseChatModel | None = None) -> Agent:
     chat = (llm or model()).bind_tools(CLAIM_TOOLS)
     instructions = SystemMessage(api.get_instructions()["claim"])
 
-    def agent(state: ClaimState) -> dict[str, Any]:
-        """Call the model with the conversation so far, and record its reply."""
+    def agent(state: ClaimState, runtime: Runtime[ClaimContext]) -> dict[str, Any]:
+        """Call the model with the conversation so far, and record its reply and
+        what it cost."""
         calls = state["model_calls"]
         if calls >= CLAIM_MODEL_CALLS:
             raise ModelCallLimitExceeded(
@@ -191,6 +224,7 @@ def claim_graph(llm: BaseChatModel | None = None) -> Agent:
             )
         reply = chat.invoke([instructions, *state["messages"]])
         record_steps(state["claim_id"], reply)
+        record_model_call(state["claim_id"], runtime.context.run_id, reply)
         return {"messages": [reply], "model_calls": calls + 1}
 
     retry = RetryPolicy(
@@ -202,7 +236,7 @@ def claim_graph(llm: BaseChatModel | None = None) -> Agent:
     tools = ToolNode(
         CLAIM_TOOLS, handle_tool_errors=tool_error, wrap_tool_call=record_tool_result
     )
-    builder = StateGraph(ClaimState)
+    builder = StateGraph(ClaimState, context_schema=ClaimContext)
     builder.add_node("agent", agent, retry_policy=retry)
     builder.add_node("tools", tools)
     builder.add_node("sign_off", sign_off)
@@ -274,9 +308,14 @@ def carry_on_input(graph: Agent, claim: dict[str, Any]) -> Any:
     return None
 
 
-def run_claim_graph(graph: Agent, start: Any, thread_id: str) -> None:
-    """Run the claim graph on a thread, saving each step before the next starts."""
-    graph.invoke(start, thread(thread_id), durability="sync")
+def run_claim_graph(
+    graph: Agent, start: Any, thread_id: str, run_id: int | None
+) -> None:
+    """Run the claim graph on a thread in a run, saving each step before the next
+    starts."""
+    graph.invoke(
+        start, thread(thread_id), context=ClaimContext(run_id), durability="sync"
+    )
 
 
 def missed_claims(run: RunContext) -> list[str]:
@@ -348,11 +387,8 @@ class Tracing(CallbackHandler):
 
         The generation is the current observation until Langfuse's handler ends it.
         """
-        usage = (response.llm_output or {}).get("token_usage", {})
-        if "cost" in usage:
-            get_client().update_current_generation(
-                cost_details={"total": usage["cost"]}
-            )
+        cost = cast(dict[str, Any], response.llm_output)["token_usage"]["cost"]
+        get_client().update_current_generation(cost_details={"total": cost})
         return super().on_llm_end(
             response, run_id=run_id, parent_run_id=parent_run_id, **kwargs
         )
@@ -408,3 +444,70 @@ def run_agent(
             on_message(message)
         messages = state["messages"]
     return messages[-1].text
+
+
+def report(claim: dict[str, Any]) -> str:
+    """Describe a decided claim in one line, from the backend's record."""
+    decision = claim["decision"]
+    line = f"{claim['claim_id']}  {decision['decision']}  ${decision['payout']:,.2f}"
+    if claim["status"] == "waiting_for_sign_off":
+        return f"{line}  waiting for sign-off"
+    if decision["decision"] == "approve":
+        return f"{line}  {'paid' if claim['payment'] else 'not paid'}"
+    return line
+
+
+def outcome(claim_id: str, run: Callable[[], None]) -> str:
+    """Run the claim graph, put the claim right if it fails, and report one line."""
+    try:
+        run()
+        problem = "The claim agent finished without recording a decision"
+    except Exception as error:  # one failed claim must never stop the others
+        problem = f"{type(error).__name__}: {error}".splitlines()[0]
+    claim = api.get_claim(claim_id)
+    if claim["decision"] is not None:
+        return report(claim)
+    claim = api.record_failure(claim_id, problem)
+    problem = problem.rstrip(".")
+    if claim["status"] == "left_for_handler":
+        return f"{claim_id}  failed again: {problem}. Left for a handler."
+    return f"{claim_id}  failed: {problem}. Back in the queue."
+
+
+def timed(claim_id: str, run_id: int | None, work: Callable[[], str]) -> str:
+    """Do one piece of work on a claim, and record how long it took with the run."""
+    started = datetime.now(UTC).isoformat(timespec="seconds")
+    clock = time.monotonic()
+    try:
+        return work()
+    finally:
+        api.record_work_time(claim_id, run_id, started, time.monotonic() - clock)
+
+
+def take_up(graph: Agent, claim: dict[str, Any]) -> tuple[str, Any]:
+    """Return the thread a claim is worked on and what starts the graph there.
+
+    A claim in progress carries on its own thread, as the same try. A waiting
+    claim is started on a new thread.
+    """
+    if claim["status"] == "in_progress":
+        return claim["thread_id"], carry_on_input(graph, claim)
+    thread_id = str(uuid.uuid4())
+    api.start_claim(claim["claim_id"], thread_id)
+    return thread_id, claim_task(claim["claim_id"])
+
+
+def work_claim(
+    claim_id: str, run_id: int | None, llm: BaseChatModel | None = None
+) -> str:
+    """Carry a claim in progress on, or start a waiting one, and report one line.
+
+    This is the one way to work a claim with the claim agent. The time it takes
+    is recorded with the run, or with none when run_id is None.
+    """
+    claim = api.get_claim(claim_id)
+    graph = claim_graph(llm)
+    thread_id, start = take_up(graph, claim)
+    run = partial(run_claim_graph, graph, start, thread_id, run_id)
+    work = partial(timed, claim_id, run_id, partial(outcome, claim_id, run))
+    return trace_claim(claim_id, thread_id, work)

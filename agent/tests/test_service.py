@@ -1,9 +1,10 @@
 import sqlite3
 from contextlib import closing
 
+import pytest
 from fastapi.testclient import TestClient
 
-from agent import harness, service, work
+from agent import api, harness, service
 from agent.tests.test_agent import StubModel, claim, script
 from backend.tests.test_openapi import follows_the_api_rules
 
@@ -20,8 +21,8 @@ def test_health():
 def test_a_claim_signed_off_is_paid_once_the_service_hears(
     client, database, monkeypatch, capsys
 ):
-    work.work_claim(
-        "CLM-1002", script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
+    harness.work_claim(
+        "CLM-1002", None, script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
     )
     client.post("/api/claims/CLM-1002/sign-off", json={"handler_id": "HND-01"})
     capsys.readouterr()
@@ -37,7 +38,8 @@ def test_a_claim_signed_off_is_paid_once_the_service_hears(
     assert capsys.readouterr().out == "CLM-1002  approve  $1,350.00  paid\n"
     assert model.prompts == []
 
-    assert agent.post("/api/claims/CLM-1002/resume").status_code == 202
+    with pytest.raises(api.ApiError, match="409: Claim CLM-1002 is not waiting"):
+        agent.post("/api/claims/CLM-1002/resume")
     with closing(sqlite3.connect(database)) as db:
         query = "SELECT count(*) FROM payments WHERE claim_id = 'CLM-1002'"
         assert db.execute(query).fetchone()[0] == 1

@@ -6,15 +6,18 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolM
 from openai.types.chat import ChatCompletion
 
 from agent import __main__ as cli
-from agent import harness, work
+from agent import harness
 from agent.tools import CLAIM_TOOLS
+
+USAGE = {"prompt_tokens": 120, "completion_tokens": 30, "cost": 0.0000043}
 
 
 class StubModel(GenericFakeChatModel):
     """A chat model that gives scripted replies and keeps the prompts it was sent.
 
-    It raises instead of replying on the calls numbered in fail_at, counting from 0,
-    and stops the process, as Ctrl-C would, on the calls numbered in stop_at.
+    Each reply carries the token usage and cost OpenRouter reports. It raises
+    instead of replying on the calls numbered in fail_at, counting from 0, and
+    stops the process, as Ctrl-C would, on the calls numbered in stop_at.
     """
 
     prompts: list[list[BaseMessage]] = []
@@ -30,7 +33,9 @@ class StubModel(GenericFakeChatModel):
             raise KeyboardInterrupt
         if len(self.prompts) - 1 in self.fail_at:
             raise RuntimeError("The model is unavailable")
-        return super()._generate(messages, stop, run_manager, **kwargs)
+        result = super()._generate(messages, stop, run_manager, **kwargs)
+        result.llm_output = {"token_usage": dict(USAGE)}
+        return result
 
 
 def call(name, text="", **args):
@@ -124,7 +129,9 @@ def test_get_instructions(client):
 
 def test_an_approval_within_the_limit_is_paid_by_the_graph(client):
     stub = script("CLM-1001", "POL-2001", "CUS-3001", "approve", 420.0)
-    assert work.work_claim("CLM-1001", stub) == "CLM-1001  approve  $420.00  paid"
+    assert (
+        harness.work_claim("CLM-1001", None, stub) == "CLM-1001  approve  $420.00  paid"
+    )
 
     found = claim(client, "CLM-1001")
     assert found["status"] == "decided"
@@ -173,7 +180,7 @@ def test_the_payout_comes_from_the_payout_rules(client):
             ]
         )
     )
-    work.work_claim("CLM-1007", stub)
+    harness.work_claim("CLM-1007", None, stub)
 
     worked_out = json.loads(stub.prompts[1][-1].text)
     assert worked_out["payout"] == 50.0
@@ -191,7 +198,7 @@ def test_the_payout_comes_from_the_payout_rules(client):
 
 def test_the_claim_agent_gets_the_instructions_from_the_backend(client):
     stub = script("CLM-1003", "POL-2003", "CUS-3003", "refer", 0)
-    work.work_claim("CLM-1003", stub)
+    harness.work_claim("CLM-1003", None, stub)
     system = stub.prompts[0][0]
     assert isinstance(system, SystemMessage)
     assert system.content == client.get("/api/instructions").json()["claim"]
@@ -199,7 +206,7 @@ def test_the_claim_agent_gets_the_instructions_from_the_backend(client):
 
 def test_an_approval_over_the_limit_waits_for_a_sign_off(client):
     stub = script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
-    line = work.work_claim("CLM-1002", stub)
+    line = harness.work_claim("CLM-1002", None, stub)
     assert line == "CLM-1002  approve  $1,350.00  waiting for sign-off"
 
     found = claim(client, "CLM-1002")
@@ -216,7 +223,9 @@ def test_an_approval_over_the_limit_waits_for_a_sign_off(client):
 
 @pytest.mark.parametrize("decision", ["decline", "refer"])
 def test_declines_and_referrals_are_decided_and_unpaid(client, decision):
-    work.work_claim("CLM-1003", script("CLM-1003", "POL-2003", "CUS-3003", decision, 0))
+    harness.work_claim(
+        "CLM-1003", None, script("CLM-1003", "POL-2003", "CUS-3003", decision, 0)
+    )
     found = claim(client, "CLM-1003")
     assert found["status"] == "decided"
     assert found["decision"]["decision"] == decision
@@ -246,7 +255,7 @@ def test_reading_a_section_is_recorded_as_a_read(client):
         call("read_section", document="claims_manual", section=7),
         call("list_sections", document="claims_manual"),
     )
-    work.work_claim("CLM-1020", stub)
+    harness.work_claim("CLM-1020", None, stub)
 
     recorded = steps(client, "CLM-1020")
     assert [s["kind"] for s in recorded[:3]] == [
@@ -272,7 +281,7 @@ def test_a_refusal_reaches_the_model_and_is_a_tool_result(client):
     stub = look_up_then_refer(
         call("read_section", document="claims_manual", section=99)
     )
-    work.work_claim("CLM-1020", stub)
+    harness.work_claim("CLM-1020", None, stub)
 
     refusal = stub.prompts[1][-1]
     assert isinstance(refusal, ToolMessage)
@@ -286,7 +295,7 @@ def test_a_refusal_reaches_the_model_and_is_a_tool_result(client):
 
 def test_a_call_with_the_wrong_arguments_reaches_the_model(client):
     stub = look_up_then_refer(call("read_section", document="claims_manual"))
-    work.work_claim("CLM-1020", stub)
+    harness.work_claim("CLM-1020", None, stub)
 
     error = stub.prompts[1][-1]
     assert isinstance(error, ToolMessage)
@@ -298,21 +307,25 @@ def test_a_call_with_the_wrong_arguments_reaches_the_model(client):
 def test_command_line_works_one_claim(monkeypatch, capsys):
     worked = []
     monkeypatch.setattr(
-        cli, "work_one_claim", lambda claim_id: worked.append(claim_id) or "A line."
+        harness,
+        "work_claim",
+        lambda claim_id, run_id: worked.append((claim_id, run_id)) or "A line.",
     )
     cli.main(["CLM-1001"])
     assert capsys.readouterr().out == "A line.\n"
-    assert worked == ["CLM-1001"]
+    assert worked == [("CLM-1001", None)]
 
 
 def test_model(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("MODEL_NAME", raising=False)
-    assert harness.model().model_name == "deepseek/deepseek-v4.1-flash"
+    assert harness.model_settings() == ("openai/gpt-6-luna", "low")
+    assert harness.model().model_name == "openai/gpt-6-luna"
     assert harness.model().reasoning_effort == "low"
     assert harness.model().request_timeout == 120
     assert harness.model().max_retries == 0
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
+    assert harness.model_settings() == ("openrouter/free", "none")
     assert harness.model().model_name == "openrouter/free"
     assert harness.model().reasoning_effort is None
 
@@ -324,7 +337,7 @@ def test_model_keeps_the_reasoning_openrouter_sends(monkeypatch):
             "id": "reply-1",
             "object": "chat.completion",
             "created": 0,
-            "model": "deepseek/deepseek-v4.1-flash",
+            "model": "openai/gpt-6-luna",
             "choices": [
                 {
                     "index": 0,

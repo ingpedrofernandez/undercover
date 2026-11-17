@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import closing
 
-from agent import work
+from agent import harness, work
 from agent.tests.test_agent import StubModel, script
 from agent.tests.test_queue import asks_for, queue_agent
 
@@ -10,15 +10,6 @@ SESSION = "session.id"
 INPUT = "langfuse.observation.input"
 OUTPUT = "langfuse.observation.output"
 COST = "langfuse.observation.cost_details"
-
-
-class PricedModel(StubModel):
-    """A stub model whose replies carry the cost OpenRouter reports."""
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        result = super()._generate(messages, stop, run_manager, **kwargs)
-        result.llm_output = {"token_usage": {"total_tokens": 49, "cost": 0.0000043}}
-        return result
 
 
 def named(spans, name):
@@ -39,7 +30,7 @@ def thread_of(client, claim_id):
 
 def test_a_claim_on_its_own_is_one_trace_in_its_session(client, spans):
     stub = script("CLM-1001", "POL-2001", "CUS-3001", "decline", 0)
-    assert work.work_claim("CLM-1001", stub) == "CLM-1001  decline  $0.00"
+    assert harness.work_claim("CLM-1001", None, stub) == "CLM-1001  decline  $0.00"
 
     traced = spans()
     [root] = named(traced, "work-claim")
@@ -95,25 +86,19 @@ def test_a_run_traces_each_claim_on_its_own(client, database, spans):
 
 def test_each_model_call_records_what_openrouter_charged(client, spans):
     stub = script("CLM-1001", "POL-2001", "CUS-3001", "decline", 0)
-    work.work_claim("CLM-1001", PricedModel(messages=stub.messages))
+    harness.work_claim("CLM-1001", None, stub)
 
-    generations = named(spans(), "PricedModel")
+    generations = named(spans(), "StubModel")
     assert len(generations) == 5
     assert {span.attributes[COST] for span in generations} == {'{"total": 4.3e-06}'}
 
 
-def test_a_model_call_without_a_cost_records_none(client, spans):
-    work.work_claim("CLM-1001", script("CLM-1001", "POL-2001", "CUS-3001", "refer", 0))
-
-    assert all(COST not in span.attributes for span in named(spans(), "StubModel"))
-
-
 def test_the_wait_and_the_payment_are_two_traces_in_one_session(client, spans):
-    work.work_claim(
-        "CLM-1002", script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
+    harness.work_claim(
+        "CLM-1002", None, script("CLM-1002", "POL-2002", "CUS-3002", "approve", 1350.0)
     )
     client.post("/api/claims/CLM-1002/sign-off", json={"handler_id": "HND-01"})
-    work.carry_on("CLM-1002", StubModel(messages=iter([])))
+    harness.work_claim("CLM-1002", None, StubModel(messages=iter([])))
 
     traced = spans()
     waited, paid = named(traced, "work-claim")

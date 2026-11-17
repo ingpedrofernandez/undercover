@@ -81,6 +81,31 @@ def record_step(claim_id: str, kind: str, content: str) -> dict[str, Any]:
     return call("POST", f"/api/claims/{claim_id}/steps", body)
 
 
+def record_model_call(
+    claim_id: str,
+    run_id: int | None,
+    input_tokens: int,
+    output_tokens: int,
+    cost: float,
+) -> dict[str, Any]:
+    """Record the tokens and cost of one model call made on a claim."""
+    body = {
+        "run_id": run_id,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost": cost,
+    }
+    return call("POST", f"/api/claims/{claim_id}/model-calls", body)
+
+
+def record_work_time(
+    claim_id: str, run_id: int | None, started_at: str, seconds: float
+) -> dict[str, Any]:
+    """Record how long the agent worked on a claim in one piece of work."""
+    body = {"run_id": run_id, "started_at": started_at, "seconds": seconds}
+    return call("POST", f"/api/claims/{claim_id}/work-times", body)
+
+
 def calculate_payout(
     policy_id: str, benefit: str, lines: list[dict[str, Any]], paid_by_others: float
 ) -> dict[str, Any]:
