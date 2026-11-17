@@ -69,6 +69,24 @@ claims = Table(
     Column("status", Text, nullable=False),
     Column("thread_id", Text),
     Column("failures", Integer, nullable=False, server_default="0"),
+    Column("evaluation_id", Integer, ForeignKey("runs.run_id")),
+    Column("source_id", Text),
+)
+held_out_claims = Table(
+    "held_out_claims",
+    metadata,
+    Column("claim_id", Text, primary_key=True),
+    Column("customer_id", Text, ForeignKey("customers.customer_id"), nullable=False),
+    Column("record", Text, nullable=False),
+)
+handler_decisions = Table(
+    "handler_decisions",
+    metadata,
+    Column("eval_set", Text, primary_key=True),
+    Column("claim_id", Text, primary_key=True),
+    Column("decision", Text, nullable=False),
+    Column("payout", Float, nullable=False),
+    Column("tiny", Boolean, nullable=False),
 )
 decisions = Table(
     "decisions",
@@ -109,6 +127,8 @@ runs = Table(
     Column("agents", Integer, nullable=False),
     Column("model", Text, nullable=False),
     Column("reasoning_effort", Text, nullable=False),
+    Column("eval_set", Text),
+    Column("tiny", Boolean),
     Column("status", Text, nullable=False),
     Column("started_at", Text, nullable=False),
     Column("finished_at", Text),

@@ -13,7 +13,9 @@ from backend.database import (
     claims,
     customers,
     engine,
+    handler_decisions,
     handlers,
+    held_out_claims,
     metadata,
     policies,
     sections,
@@ -21,6 +23,10 @@ from backend.database import (
 )
 
 DATA = ROOT / "data"
+ANSWER_KEY = {
+    "evaluation": "evals/decisions.json",
+    "held_out": "evals/held_out_decisions.json",
+}
 DOCUMENTS = {"policy_wording": "policy_wording.md", "claims_manual": "claims_manual.md"}
 
 
@@ -50,17 +56,47 @@ def document_sections() -> list[dict[str, Any]]:
     ]
 
 
+def answer_key() -> list[dict[str, Any]]:
+    """Return the handlers' decisions on both labelled sets, as rows."""
+    return [
+        {
+            "eval_set": eval_set,
+            "claim_id": d["claim_id"],
+            "decision": d["decision"],
+            "payout": d["payout"],
+            "tiny": d["tiny"],
+        }
+        for eval_set, name in ANSWER_KEY.items()
+        for d in load(name)
+    ]
+
+
+def claim_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return claims as rows, each with its record as JSON."""
+    return [
+        {
+            "claim_id": c["claim_id"],
+            "customer_id": c["customer_id"],
+            "record": json.dumps(c),
+        }
+        for c in rows
+    ]
+
+
 def seed() -> dict[str, int]:
     """Rebuild our tables from data/ and count what they hold.
 
-    On Supabase the undercover schema is made if it's missing, and the
-    checkpointer's tables in it are left alone.
+    The held-out claims and the handlers' decisions on both labelled sets, from
+    data/evals/, go in tables of their own, out of the queue. On Supabase the
+    undercover schema is made if it's missing, and the checkpointer's tables in
+    it are left alone.
     """
     company = load("company.json")
     handler_rows = load("handlers.json")
     customer_rows = load("customers.json")
     policy_rows = load("policies.json")
-    claim_rows = load("claims.json")
+    queue = load("claims.json")
+    held_out = load("evals/held_out_claims.json")
     database = engine()
     with database.begin() as db:
         if database.dialect.name == "postgresql":
@@ -97,20 +133,14 @@ def seed() -> dict[str, int]:
             ],
         )
         db.execute(
-            insert(claims),
-            [
-                {
-                    "claim_id": c["claim_id"],
-                    "customer_id": c["customer_id"],
-                    "record": json.dumps(c),
-                    "status": "waiting",
-                }
-                for c in claim_rows
-            ],
+            insert(claims), [row | {"status": "waiting"} for row in claim_rows(queue)]
         )
+        db.execute(insert(held_out_claims), claim_rows(held_out))
+        db.execute(insert(handler_decisions), answer_key())
         db.execute(insert(sections), document_sections())
     return {
-        "claims": len(claim_rows),
+        "claims": len(queue),
+        "held_out": len(held_out),
         "policies": len(policy_rows),
         "customers": len(customer_rows),
         "handlers": len(handler_rows),
@@ -129,9 +159,9 @@ def main() -> None:
     """Rebuild the database and say what it holds."""
     counts = seed()
     print(
-        f"Seeded {counts['claims']} claims, {counts['policies']} policies, "
-        f"{counts['customers']} customers and {counts['handlers']} handlers "
-        f"into {where()}"
+        f"Seeded {counts['claims']} claims, {counts['held_out']} held-out claims, "
+        f"{counts['policies']} policies, {counts['customers']} customers and "
+        f"{counts['handlers']} handlers into {where()}"
     )
 
 

@@ -46,3 +46,8 @@ def start(path: str, body: dict[str, Any]) -> None:
 def start_dispatch(agents: int) -> None:
     """Ask the agent's service to start a dispatch with agents claim agents at once."""
     start("/api/dispatches", {"agents": agents})
+
+
+def start_evaluation(agents: int, eval_set: str, tiny: bool) -> None:
+    """Ask the agent's service to start an evaluation of a labelled set."""
+    start("/api/evaluations", {"agents": agents, "eval_set": eval_set, "tiny": tiny})

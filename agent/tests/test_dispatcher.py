@@ -2,63 +2,20 @@ import sqlite3
 import threading
 import time
 from contextlib import closing
-from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 import pytest
 from langchain_core.exceptions import ModelRateLimitError, ModelTimeoutError
-from langchain_core.messages import AIMessage, ToolMessage
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.postgres import PostgresSaver
 from pydantic import SecretStr
 
 from agent import api, dispatcher, harness, work
 from agent.harness import checkpointer as own_checkpointer
-from agent.tests.test_agent import StubModel, call, decide, script, steps
+from agent.tests.test_agent import script, steps
 from agent.tests.test_durable import failures
 
 SIX = ["CLM-1001", "CLM-1002", "CLM-1003", "CLM-1004", "CLM-1005", "CLM-1006"]
-
-
-@dataclass
-class Plan:
-    """What every claim agent of a test does: decline unless a claim has a choice,
-    and raise a claim's trouble, one error at a time, before deciding it."""
-
-    choices: dict[str, tuple[str, float]] = field(default_factory=dict)
-    trouble: dict[str, list[Exception]] = field(default_factory=dict)
-
-
-class ClaimAgent(StubModel):
-    """A claim agent's model for any claim: it reads the claim, then decides it."""
-
-    plan: Any = None
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        claim_id = messages[1].content.removeprefix("Claim ")
-        done = {m.name for m in messages if isinstance(m, ToolMessage)}
-        if "record_decision" in done:
-            reply = AIMessage("Done.")
-        elif "get_claim" in done:
-            if self.plan.trouble.get(claim_id):
-                raise self.plan.trouble[claim_id].pop()
-            choice = self.plan.choices.get(claim_id, ("decline", 0))
-            reply = decide(claim_id, *choice)
-        else:
-            reply = call("get_claim", claim_id=claim_id)
-        self.messages = iter([reply])
-        return super()._generate(messages, stop, run_manager, **kwargs)
-
-
-@pytest.fixture
-def agents(monkeypatch):
-    """Give every claim agent a ClaimAgent model following one plan."""
-    plan = Plan()
-    monkeypatch.setattr(
-        harness, "model", lambda: ClaimAgent(messages=iter([]), plan=plan)
-    )
-    return plan
 
 
 def all_but(claim_ids):
@@ -132,7 +89,7 @@ class Recorder:
         return f"{claim_id}  decline  $0.00"
 
 
-@pytest.mark.parametrize("agents_at_once", [1, 3])
+@pytest.mark.parametrize("agents_at_once", [1, 3, 6])
 def test_never_more_than_n_claims_at_once(client, monkeypatch, capsys, agents_at_once):
     recorder = Recorder()
     monkeypatch.setattr(harness, "work_claim", recorder)

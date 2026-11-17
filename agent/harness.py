@@ -276,6 +276,11 @@ def checkpointer() -> BaseCheckpointSaver[str]:
     return PostgresSaver(pool())
 
 
+def clear_progress(thread_id: str) -> None:
+    """Delete everything saved on a claim's thread, so it is never carried on."""
+    checkpointer().delete_thread(thread_id)
+
+
 def thread(thread_id: str) -> RunnableConfig:
     """Return the config that runs the claim graph on one claim's thread."""
     return RunnableConfig(

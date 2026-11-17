@@ -65,8 +65,8 @@ def test_unknown_ids(client):
 def test_seed_command(capsys):
     seed.main()
     assert capsys.readouterr().out == (
-        "Seeded 25 claims, 50 policies, 49 customers and 3 handlers "
-        "into undercover.db\n"
+        "Seeded 25 claims, 25 held-out claims, 50 policies, 49 customers and "
+        "3 handlers into undercover.db\n"
     )
 
 

@@ -1,4 +1,6 @@
 import json
+from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
@@ -68,6 +70,36 @@ def script(claim_id, policy_id, customer_id, decision, payout, *extra):
             ]
         )
     )
+
+
+@dataclass
+class Plan:
+    """What every claim agent of a test does: decline unless a claim has a choice,
+    and raise a claim's trouble, one error at a time, before deciding it."""
+
+    choices: dict[str, tuple[str, float]] = field(default_factory=dict)
+    trouble: dict[str, list[Exception]] = field(default_factory=dict)
+
+
+class ClaimAgent(StubModel):
+    """A claim agent's model for any claim: it reads the claim, then decides it."""
+
+    plan: Any = None
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        claim_id = messages[1].content.removeprefix("Claim ")
+        done = {m.name for m in messages if isinstance(m, ToolMessage)}
+        if "record_decision" in done:
+            reply = AIMessage("Done.")
+        elif "get_claim" in done:
+            if self.plan.trouble.get(claim_id):
+                raise self.plan.trouble[claim_id].pop()
+            choice = self.plan.choices.get(claim_id, ("decline", 0))
+            reply = decide(claim_id, *choice)
+        else:
+            reply = call("get_claim", claim_id=claim_id)
+        self.messages = iter([reply])
+        return super()._generate(messages, stop, run_manager, **kwargs)
 
 
 def claim(client, claim_id):

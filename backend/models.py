@@ -10,6 +10,7 @@ Status = Literal[
 DecisionKind = Literal["approve", "decline", "refer"]
 StepKind = Literal["tool_call", "tool_result", "message", "read", "error"]
 RunKind = Literal["dispatch", "evaluation"]
+EvalSet = Literal["evaluation", "held_out"]
 RunStatus = Literal["running", "finished", "stopped"]
 Effort = Literal["low", "none"]
 Agents = Annotated[
@@ -86,6 +87,7 @@ class Claim(BaseModel):
     documents: list[Document]
     status: Status
     thread_id: str | None
+    evaluation_id: int | None
     decision: Decision | None
     payment: Payment | None
 
@@ -201,6 +203,8 @@ class Run(BaseModel):
     agents: int
     model: str
     reasoning_effort: Effort
+    eval_set: EvalSet | None
+    tiny: bool | None
     status: RunStatus
     started_at: str
     finished_at: str | None
@@ -246,6 +250,52 @@ class CreateDispatchRequest(BaseModel):
 
 class StartDispatchRequest(BaseModel):
     agents: Agents
+
+
+class StartEvaluationRequest(BaseModel):
+    agents: Agents
+    eval_set: EvalSet
+    tiny: bool = Field(description="True for just the set's five tiny claims")
+
+
+class CreateEvaluationRequest(StartEvaluationRequest):
+    model: str = Field(min_length=1, description="The model the claim agents use")
+    reasoning_effort: Effort
+
+
+class Measures(BaseModel):
+    decision_accuracy: float
+    accuracy: float
+    cost_of_mistakes: float
+    straight_through: float
+    cost_per_claim: float
+    seconds_per_claim: float
+    run_seconds: float | None
+
+
+class ScoredClaim(BaseModel):
+    claim_id: str
+    source_id: str
+    status: Status
+    handler_decision: DecisionKind
+    handler_payout: float
+    decision: DecisionKind | None
+    payout: float | None
+    reason: str | None
+    right_decision: bool
+    right: bool
+    mistake_cost: float
+    seconds: float
+    cost: float
+
+
+class EvaluationSummary(Run):
+    claim_count: int
+    measures: Measures
+
+
+class Evaluation(EvaluationSummary):
+    claims: list[ScoredClaim]
 
 
 class TakeClaimsRequest(BaseModel):

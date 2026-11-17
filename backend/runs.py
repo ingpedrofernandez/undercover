@@ -60,10 +60,16 @@ def to_dispatch(db: Connection, row: RowMapping) -> Dispatch:
     )
 
 
-def queue_to_work(db: Connection, skip: list[str]) -> list[str]:
-    """Return the queue's claims in progress and waiting, oldest submitted first."""
+def claims_to_work(db: Connection, run: RowMapping, skip: list[str]) -> list[str]:
+    """Return a run's claims in progress and waiting, oldest submitted first: the
+    queue's for a dispatch, and its own copies for an evaluation."""
+    if run["kind"] == "evaluation":
+        belongs = claims.c.evaluation_id == run["run_id"]
+    else:
+        belongs = claims.c.evaluation_id.is_(None)
     rows = db.execute(
         select(claims.c.claim_id, claims.c.record).where(
+            belongs,
             claims.c.status.in_(("in_progress", "waiting")),
             claims.c.claim_id.not_in(skip),
         )
@@ -119,8 +125,7 @@ def stop_runs(db: Database) -> list[Run]:
 @router.post("/runs/{run_id}/claims", operation_id="take_claims")
 def take_claims(run_id: int, request: TakeClaimsRequest, db: Database) -> list[str]:
     """Pick the claims a run works, oldest submitted first, and record them on it."""
-    open_run(db, run_id)
-    taken = queue_to_work(db, request.skip)
+    taken = claims_to_work(db, open_run(db, run_id), request.skip)
     if taken:
         db.execute(
             insert(run_claims),

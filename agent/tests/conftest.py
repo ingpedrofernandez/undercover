@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import pytest
 from fastapi.testclient import TestClient
 from langfuse import Langfuse, get_client
@@ -7,6 +9,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 )
 
 from agent import api, dispatcher, harness
+from agent.tests.test_agent import ClaimAgent, Plan
 from backend.main import app
 from backend.tests.conftest import client, database, resumed
 
@@ -39,8 +42,11 @@ def spans(traces):
 
 @pytest.fixture(autouse=True)
 def backend(monkeypatch):
-    """Send the agent's requests to the test backend."""
-    monkeypatch.setattr(api, "client", lambda: TestClient(app))
+    """Send the agent's requests to the test backend, all on one event loop as
+    uvicorn runs them, so claim agents working at once share its connections."""
+    with TestClient(app) as shared:
+        monkeypatch.setattr(api, "client", lambda: nullcontext(shared))
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -59,3 +65,13 @@ def no_retry_delay(monkeypatch):
     """Retry failed model calls and claims at once, so the tests stay fast."""
     monkeypatch.setattr(harness, "RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(dispatcher, "RETRY_WAIT_SECONDS", 0)
+
+
+@pytest.fixture
+def agents(monkeypatch):
+    """Give every claim agent a ClaimAgent model following one plan."""
+    plan = Plan()
+    monkeypatch.setattr(
+        harness, "model", lambda: ClaimAgent(messages=iter([]), plan=plan)
+    )
+    return plan

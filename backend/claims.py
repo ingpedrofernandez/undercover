@@ -43,6 +43,7 @@ CLAIM = (
         claims.c.record,
         claims.c.status,
         claims.c.thread_id,
+        claims.c.evaluation_id,
         customers.c.name.label("customer_name"),
         decisions.c.decision,
         decisions.c.payout,
@@ -107,6 +108,7 @@ def to_claim(row: RowMapping) -> Claim:
             "status": row["status"],
             "customer_name": row["customer_name"],
             "thread_id": row["thread_id"],
+            "evaluation_id": row["evaluation_id"],
             "decision": decision,
             "payment": payment,
         }
@@ -149,8 +151,10 @@ def add_step(
 
 @router.get("", operation_id="list_claims")
 def list_claims(db: Database) -> list[ClaimSummary]:
-    """List every claim in the queue, in id order."""
-    rows = db.execute(CLAIM.order_by(claims.c.claim_id)).mappings()
+    """List every claim in the queue, in id order; evaluations' copies are not in it."""
+    rows = db.execute(
+        CLAIM.where(claims.c.evaluation_id.is_(None)).order_by(claims.c.claim_id)
+    ).mappings()
     return [to_summary(row) for row in rows]
 
 
@@ -277,6 +281,10 @@ def sign_off_claim(
 ) -> Claim:
     """Sign off a held payout as a handler, so the agent can pay it."""
     claim = find_claim(db, claim_id)
+    if claim["evaluation_id"] is not None:
+        raise HTTPException(
+            409, f"Claim {claim_id} is an evaluation's copy and is never signed off"
+        )
     if claim["status"] != "waiting_for_sign_off":
         raise HTTPException(409, f"Claim {claim_id} is not waiting for sign-off")
     row = (

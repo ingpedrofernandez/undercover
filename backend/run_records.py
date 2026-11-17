@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import Connection, RowMapping, func, insert, select
+from sqlalchemy import Connection, RowMapping, Subquery, func, insert, select
 
 from backend.database import (
     claims,
@@ -50,10 +50,9 @@ def run_seconds(row: RowMapping) -> float | None:
     return (datetime.fromisoformat(row["finished_at"]) - started).total_seconds()
 
 
-def claims_of(db: Connection, run_id: int) -> list[RunClaim]:
-    """Return the claims a run took, in order, each with where it stands and its
-    first start, time and cost in the run."""
-    times = (
+def times_in(run_id: int) -> Subquery:
+    """Each claim's first start and time in all in a run."""
+    return (
         select(
             work_times.c.claim_id,
             func.min(work_times.c.started_at).label("started_at"),
@@ -63,12 +62,23 @@ def claims_of(db: Connection, run_id: int) -> list[RunClaim]:
         .group_by(work_times.c.claim_id)
         .subquery()
     )
-    costs = (
+
+
+def costs_in(run_id: int) -> Subquery:
+    """Each claim's model cost in a run."""
+    return (
         select(model_calls.c.claim_id, func.sum(model_calls.c.cost).label("cost"))
         .where(model_calls.c.run_id == run_id)
         .group_by(model_calls.c.claim_id)
         .subquery()
     )
+
+
+def claims_of(db: Connection, run_id: int) -> list[RunClaim]:
+    """Return the claims a run took, in order, each with where it stands and its
+    first start, time and cost in the run."""
+    times = times_in(run_id)
+    costs = costs_in(run_id)
     rows = db.execute(
         select(
             claims.c.claim_id,

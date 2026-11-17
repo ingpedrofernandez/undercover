@@ -149,6 +149,20 @@ def create_dispatch(agents: int, model: str, reasoning_effort: str) -> dict[str,
     return call("POST", "/api/dispatches", body)
 
 
+def create_evaluation(
+    agents: int, eval_set: str, tiny: bool, model: str, reasoning_effort: str
+) -> dict[str, Any]:
+    """Record a new evaluation of a labelled set, with a copy of each of its claims."""
+    body = {
+        "agents": agents,
+        "eval_set": eval_set,
+        "tiny": tiny,
+        "model": model,
+        "reasoning_effort": reasoning_effort,
+    }
+    return call("POST", "/api/evaluations", body)
+
+
 def take_claims(run_id: int, skip: list[str]) -> list[str]:
     """Pick the claims a run works, oldest submitted first, leaving out skip."""
     return call("POST", f"/api/runs/{run_id}/claims", {"skip": skip})

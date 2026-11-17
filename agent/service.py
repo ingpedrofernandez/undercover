@@ -1,5 +1,6 @@
-"""The agent's web service: it starts dispatches, and carries a claim on as soon as a
-handler signs it off. It hands each request on and does no work itself.
+"""The agent's web service: it starts dispatches and evaluations, and carries a claim
+on as soon as a handler signs it off. It hands each request on and does no work
+itself.
 
 npm run dev starts it on port 8002, with .env.
 """
@@ -7,7 +8,7 @@ npm run dev starts it on port 8002, with .env.
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -25,6 +26,12 @@ Agents = Annotated[
 
 class DispatchRequest(BaseModel):
     agents: Agents
+
+
+class EvaluationRequest(BaseModel):
+    agents: Agents
+    eval_set: Literal["evaluation", "held_out"]
+    tiny: bool = Field(description="True for just the set's five tiny claims")
 
 
 @asynccontextmanager
@@ -49,7 +56,7 @@ def resume(claim_id: str) -> None:
 
 
 def run_then_release(run: Callable[..., None], *args: object) -> None:
-    """Do a dispatch, then let the next one start."""
+    """Do a dispatch or an evaluation, then let the next one start."""
     try:
         run(*args)
     finally:
@@ -77,6 +84,15 @@ def start_dispatch(
 ) -> dict[str, str]:
     """Start a dispatch over the queue in the background, unless a run is going."""
     start(background, work.dispatch, request.agents, sorted(RESUMING))
+    return {"status": "accepted"}
+
+
+@app.post("/api/evaluations", operation_id="start_evaluation", status_code=202)
+def start_evaluation(
+    request: EvaluationRequest, background: BackgroundTasks
+) -> dict[str, str]:
+    """Start an evaluation in the background, unless a run is going."""
+    start(background, work.evaluate, request.agents, request.eval_set, request.tiny)
     return {"status": "accepted"}
 
 

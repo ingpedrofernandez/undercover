@@ -188,6 +188,7 @@ The agent's modules depend on each other in one direction: `api` ← `tools` ←
 5. `agent/tests/test_tracing.py` borrows helpers from `test_queue.py`, which goes with the queue agent (phase 2).
 6. Found while building phase 2: in LangGraph 1.2.12 a node's `error_handler` caught a failed `Send` task only when it ran alone. With several `Send` tasks in one step, the runner marked the handled failure as not to be raised again, but the thread executor's `__exit__` never checked that mark and raised it anyway, which would stop the whole dispatch. LangGraph 1.2.22 fixes it, so the project now depends on `langgraph>=1.2.22`.
 7. Found while building phase 2: the end-to-end sign-off test read the stand-in's record straight after the page changed, but the backend calls the agent's service in a background task after it answers, so about half the runs read an empty record about 60 ms too early. The test now waits for the call with `expect.poll`.
+8. Found while building phase 4: every test run of five claim agents at once hung. The agent's tests built a new `TestClient` for each call to the backend, and each `TestClient` runs its own event loop, so with more claim agents than the backend's four connection slots, a request waiting for a slot on one loop was never woken when another loop freed one: a dispatch at N=5 hung the same way, and the hang went away with slots enough that nobody waited. uvicorn runs every request on one loop, so the tests now share one `TestClient` for the whole test, as the product does, and the dispatcher's test of N at once also runs six claim agents.
 
 ### Dashboard
 
@@ -286,21 +287,21 @@ Rename `backend/agent_client.py` to `backend/agent_service.py`, with one `client
 
 Seed `held_out_claims` and `handler_decisions` from `data/evals/`. Add `evaluation_id` and `source_id` to `claims` and `eval_set` and `tiny` to `runs`. Build `create_evaluation` with the copies, `take_claims` for an evaluation, `backend/scoring.py`, `list_evaluations`, `get_evaluation` and the backend's `start_evaluation`. Leave copies out of the queue and refuse to sign one off. The service gets `start_evaluation`, and `work.evaluate` clears each copy's saved progress.
 
-- [ ] pytest: seeding stores 25 held-out claims and 50 handler decisions, 25 for each set with 5 `tiny` in each, and the queue still holds 25 claims
-- [ ] `grep -rln handler_decisions backend agent` finds only `backend/database.py`, `backend/seed.py`, `backend/evaluations.py` and the tests, and `grep -rn "evals" agent` finds nothing
-- [ ] pytest: `create_evaluation` of the evaluation set makes 25 copies, its `tiny` claims 5 (copies of CLM-1007, CLM-1015, CLM-1017, CLM-1020 and CLM-1021), and the held-out set's `tiny` claims copies of CLM-1104, CLM-1106, CLM-1110, CLM-1112 and CLM-1114. Each copy is waiting, with a new id written into its record, and `list_claims` returns the same 25 claims as before
-- [ ] pytest: `get_claim` on a copy has its new id and its `evaluation_id`, the same fields as a queue claim, and none of the handler's decision, payout, reason, reference or calculation
-- [ ] pytest: signing off a copy held for sign-off returns 409, and the copy stays held
-- [ ] pytest: `take_claims` on an evaluation returns its copies, oldest submitted first, and on a dispatch never a copy
-- [ ] pytest: the scoring functions on hand-worked cases: a right approval within a dollar, a right approval $40 out, a wrongful decline, a wrongful approval paid and one held, a needless referral, a claim with no decision counted as a referral, and the run's measures from them
-- [ ] pytest: an evaluation of the five `tiny` claims of the evaluation set, played out through the API with decisions, model calls and work times, has in `list_evaluations` and `get_evaluation` the measures worked out by hand in the test, and each claim with the handler's decision and payout beside the agent's, the agent's reason, cost and time
-- [ ] pytest: `list_evaluations` is newest first, and a stopped evaluation shows as stopped with no run time
-- [ ] Stub model test: `work.evaluate` at N=5 on the five `tiny` claims, with a stub that decides each copy and approves one over $1,000, leaves `list_claims` exactly as it was, decides or holds every copy, records the set, N, model and effort, counts the held copy as an approval with its payout, clears every copy's thread from the checkpointer, and finishes the evaluation
-- [ ] Stub model test: a dispatch after an evaluation takes no copy
-- [ ] Service tests: `start_evaluation` returns 202 and runs the evaluation, and 409 while a run is going. The backend's `start_evaluation` asks the service once with N, the set and `tiny`, returns 503 when the service isn't running, and 422 for an unknown set
-- [ ] The OpenAPI tests pass for the backend and the service
-- [ ] `npm run seed` works, and through the Supabase MCP server `undercover.held_out_claims` has 25 rows, `undercover.handler_decisions` 50, and the queue 25 waiting claims
-- [ ] `npm run check` passes
+- [x] pytest: seeding stores 25 held-out claims and 50 handler decisions, 25 for each set with 5 `tiny` in each, and the queue still holds 25 claims
+- [x] `grep -rln handler_decisions backend agent` finds only `backend/database.py`, `backend/seed.py`, `backend/evaluations.py` and the tests, and `grep -rn "evals" agent` finds nothing
+- [x] pytest: `create_evaluation` of the evaluation set makes 25 copies, its `tiny` claims 5 (copies of CLM-1007, CLM-1015, CLM-1017, CLM-1020 and CLM-1021), and the held-out set's `tiny` claims copies of CLM-1104, CLM-1106, CLM-1110, CLM-1112 and CLM-1114. Each copy is waiting, with a new id written into its record, and `list_claims` returns the same 25 claims as before
+- [x] pytest: `get_claim` on a copy has its new id and its `evaluation_id`, the same fields as a queue claim, and none of the handler's decision, payout, reason, reference or calculation
+- [x] pytest: signing off a copy held for sign-off returns 409, and the copy stays held
+- [x] pytest: `take_claims` on an evaluation returns its copies, oldest submitted first, and on a dispatch never a copy
+- [x] pytest: the scoring functions on hand-worked cases: a right approval within a dollar, a right approval $40 out, a wrongful decline, a wrongful approval paid and one held, a needless referral, a claim with no decision counted as a referral, and the run's measures from them
+- [x] pytest: an evaluation of the five `tiny` claims of the evaluation set, played out through the API with decisions, model calls and work times, has in `list_evaluations` and `get_evaluation` the measures worked out by hand in the test, and each claim with the handler's decision and payout beside the agent's, the agent's reason, cost and time
+- [x] pytest: `list_evaluations` is newest first, and a stopped evaluation shows as stopped with no run time
+- [x] Stub model test: `work.evaluate` at N=5 on the five `tiny` claims, with a stub that decides each copy and approves one over $1,000, leaves `list_claims` exactly as it was, decides or holds every copy, records the set, N, model and effort, counts the held copy as an approval with its payout, clears every copy's thread from the checkpointer, and finishes the evaluation
+- [x] Stub model test: a dispatch after an evaluation takes no copy
+- [x] Service tests: `start_evaluation` returns 202 and runs the evaluation, and 409 while a run is going. The backend's `start_evaluation` asks the service once with N, the set and `tiny`, returns 503 when the service isn't running, and 422 for an unknown set
+- [x] The OpenAPI tests pass for the backend and the service
+- [x] `npm run seed` works, and through the Supabase MCP server `undercover.held_out_claims` has 25 rows, `undercover.handler_decisions` 50, and the queue 25 waiting claims
+- [x] `npm run check` passes
 
 ## Phase 5: The scoreboard
 
