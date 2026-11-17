@@ -116,19 +116,11 @@ it("shows other errors loading a claim", async () => {
   expect((await screen.findByRole("alert")).textContent).toBe("Server error");
 });
 
-it("shows the agent's instructions read only", async () => {
-  stubApi({
-    "GET /api/instructions": {
-      queue: "# Running the queue",
-      claim: "# UnderCover Agent",
-    },
-  });
+it("shows the claim agent's instructions read only", async () => {
+  stubApi({ "GET /api/instructions": { claim: "# UnderCover Agent" } });
   renderAt("/instructions");
   expect(await screen.findByText("# UnderCover Agent")).toBeDefined();
-  expect(screen.getByText("# Running the queue")).toBeDefined();
-  expect(
-    screen.getByRole("heading", { name: "Running the queue" }),
-  ).toBeDefined();
+  expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
   expect(
     screen.getByRole("heading", { name: "Working a claim" }),
   ).toBeDefined();

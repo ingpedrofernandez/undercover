@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from agent import harness, service
 from agent.tests.test_agent import USAGE, StubModel, script
 from agent.tests.test_failures import failing
+from backend.tests.test_runs import create_dispatch
 
 
 def rows(database, table, claim_id):
@@ -19,7 +20,7 @@ def rows(database, table, claim_id):
 
 @pytest.fixture
 def run_id(client):
-    return client.post("/api/runs", json={"limit": 1}).json()["run_id"]
+    return create_dispatch(client)
 
 
 def test_a_claim_on_its_own_records_its_cost_and_time_with_no_run(client, database):

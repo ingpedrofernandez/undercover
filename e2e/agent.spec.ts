@@ -130,8 +130,14 @@ test("a handler signs off a payout over the limit", async ({
     page.getByText(/^Signed off by Dana Whitfield at/),
   ).toBeVisible();
   await expect(page.getByText("The agent is paying this claim.")).toBeVisible();
-  const asked = await resumedClaims(request);
-  expect(asked.filter((claimId) => claimId === "CLM-1020")).toHaveLength(1);
+  // The backend tells the agent's service after it answers the sign-off.
+  await expect
+    .poll(async () =>
+      (await resumedClaims(request)).filter(
+        (claimId) => claimId === "CLM-1020",
+      ),
+    )
+    .toHaveLength(1);
 
   expect((await payClaim(request, "CLM-1020", 1350)).ok()).toBe(true);
   await expect(heading.getByText("Decided")).toBeVisible();

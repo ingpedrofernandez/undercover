@@ -1,6 +1,6 @@
 """The shapes of the backend's requests and responses."""
 
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -9,7 +9,12 @@ Status = Literal[
 ]
 DecisionKind = Literal["approve", "decline", "refer"]
 StepKind = Literal["tool_call", "tool_result", "message", "read", "error"]
-TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
+RunKind = Literal["dispatch", "evaluation"]
+RunStatus = Literal["running", "finished", "stopped"]
+Effort = Literal["low", "none"]
+Agents = Annotated[
+    int, Field(ge=1, le=25, description="How many claim agents work at once")
+]
 Benefit = Literal[
     "trip_cancellation",
     "trip_interruption",
@@ -130,7 +135,6 @@ class Step(BaseModel):
 
 
 class Instructions(BaseModel):
-    queue: str
     claim: str
 
 
@@ -191,30 +195,59 @@ class FailureRequest(BaseModel):
     reason: str = Field(min_length=1, description="What went wrong")
 
 
-class Todo(BaseModel):
-    content: str = Field(min_length=1)
-    status: TodoStatus
-
-
 class Run(BaseModel):
     run_id: int
-    limit: int
+    kind: RunKind
+    agents: int
+    model: str
+    reasoning_effort: Effort
+    status: RunStatus
     started_at: str
     finished_at: str | None
-    summary: str | None
-    todos: list[Todo]
 
 
-class RunRequest(BaseModel):
-    limit: int = Field(ge=1, description="The most claims the run may take on")
+class RunClaim(BaseModel):
+    claim_id: str
+    status: Status
+    decision: DecisionKind | None
+    payout: float | None
+    started_at: str | None
+    seconds: float
+    cost: float
 
 
-class TodosRequest(BaseModel):
-    todos: list[Todo] = Field(description="The whole to-do list, in order")
+class HeldPayout(BaseModel):
+    claim_id: str
+    payout: float
 
 
-class FinishRequest(BaseModel):
-    summary: str = Field(min_length=1, description="A short summary for the handlers")
+class DispatchSummary(BaseModel):
+    approved: int
+    declined: int
+    referred: int
+    waiting_for_sign_off: list[HeldPayout]
+    left_for_handler: list[str]
+    in_progress: list[str]
+
+
+class Dispatch(Run):
+    cost: float
+    run_seconds: float | None
+    work_seconds: float
+    claims: list[RunClaim]
+    summary: DispatchSummary | None
+
+
+class CreateDispatchRequest(BaseModel):
+    agents: Agents
+    model: str = Field(min_length=1, description="The model the claim agents use")
+    reasoning_effort: Effort
+
+
+class TakeClaimsRequest(BaseModel):
+    skip: list[str] = Field(
+        description="Claims to leave out, such as those the agent's service is resuming"
+    )
 
 
 class ModelCallRequest(BaseModel):

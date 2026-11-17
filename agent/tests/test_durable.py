@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent import __main__ as cli
-from agent import api, harness, work
+from agent import api, harness
 from agent.tests.test_agent import StubModel, claim, decide, script, steps
 from agent.tests.test_failures import failing, round_in_circles
 
@@ -165,70 +165,10 @@ def test_the_model_call_cap_holds_across_a_stop(client):
     assert len(second.prompts) == harness.CLAIM_MODEL_CALLS - 25
 
 
-@pytest.fixture
-def stopped_run(client, database):
-    """A run stopped with CLM-1002 signed off and CLM-1003 stopped partway, and
-    every other claim decided."""
-    client.post("/api/runs", json={"limit": 2})
-    harness.work_claim("CLM-1002", None, held())
-    sign_off(client)
-    stopping = script("CLM-1003", "POL-2003", "CUS-3003", "decline", 0)
-    stopping.stop_at = {2}
-    with pytest.raises(KeyboardInterrupt):
-        harness.work_claim("CLM-1003", None, stopping)
-    with closing(sqlite3.connect(database)) as db, db:
-        db.execute(
-            "UPDATE claims SET status = 'decided'"
-            " WHERE claim_id NOT IN ('CLM-1002', 'CLM-1003')"
-        )
-
-
 def finish_decline():
     return StubModel(
         messages=iter([decide("CLM-1003", "decline", 0), AIMessage("Declined.")])
     )
-
-
-def test_a_run_catches_up_before_it_starts(client, stopped_run, capsys):
-    work.catch_up(finish_decline())
-    assert capsys.readouterr().out.splitlines() == [
-        "Run 1 was stopped before it finished",
-        "CLM-1002  approve  $1,350.00  paid",
-        "CLM-1003  decline  $0.00",
-    ]
-    run = client.get("/api/runs/latest").json()
-    assert run["finished_at"]
-    assert run["summary"] == work.STOPPED
-
-
-def test_catching_up_with_nothing_stopped_does_nothing(client, capsys):
-    work.catch_up(nothing())
-    assert capsys.readouterr().out == ""
-
-
-def test_the_command_line_catches_up_when_none_are_waiting(
-    client, stopped_run, monkeypatch, capsys
-):
-    monkeypatch.setattr(harness, "model", finish_decline)
-    cli.main([])
-    assert capsys.readouterr().out.splitlines() == [
-        "Run 1 was stopped before it finished",
-        "CLM-1002  approve  $1,350.00  paid",
-        "CLM-1003  decline  $0.00",
-        "No claims are waiting.",
-    ]
-
-
-def test_claims_caught_up_do_not_count_against_the_cap(
-    client, stopped_run, database, monkeypatch, capsys
-):
-    with closing(sqlite3.connect(database)) as db, db:
-        db.execute("UPDATE claims SET status = 'waiting' WHERE claim_id = 'CLM-1004'")
-    runs = []
-    monkeypatch.setattr(harness, "model", finish_decline)
-    monkeypatch.setattr(cli, "run_queue", lambda limit: runs.append(limit) or "Done.")
-    cli.main([])
-    assert runs == [1]
 
 
 def test_the_command_line_carries_on_a_claim_in_progress(client, monkeypatch, capsys):

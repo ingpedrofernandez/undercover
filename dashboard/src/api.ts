@@ -112,24 +112,53 @@ export interface Step {
 }
 
 export interface Instructions {
-  queue: string;
   claim: string;
 }
 
-export type TodoStatus = "to_do" | "in_progress" | "done" | "left_for_handler";
-
-export interface Todo {
-  content: string;
-  status: TodoStatus;
-}
+export type RunStatus = "running" | "finished" | "stopped";
+export type Effort = "low" | "none";
 
 export interface Run {
   run_id: number;
-  limit: number;
+  kind: "dispatch" | "evaluation";
+  agents: number;
+  model: string;
+  reasoning_effort: Effort;
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
-  summary: string | null;
-  todos: Todo[];
+}
+
+export interface RunClaim {
+  claim_id: string;
+  status: Status;
+  decision: DecisionKind | null;
+  payout: number | null;
+  started_at: string | null;
+  seconds: number;
+  cost: number;
+}
+
+export interface HeldPayout {
+  claim_id: string;
+  payout: number;
+}
+
+export interface DispatchSummary {
+  approved: number;
+  declined: number;
+  referred: number;
+  waiting_for_sign_off: HeldPayout[];
+  left_for_handler: string[];
+  in_progress: string[];
+}
+
+export interface Dispatch extends Run {
+  cost: number;
+  run_seconds: number | null;
+  work_seconds: number;
+  claims: RunClaim[];
+  summary: DispatchSummary | null;
 }
 
 export class ApiError extends Error {
@@ -176,7 +205,7 @@ export const api = {
     ),
   getInstructions: () => request<Instructions>("/api/instructions"),
   listHandlers: () => request<Handler[]>("/api/handlers"),
-  getLatestRun: () => request<Run | null>("/api/runs/latest"),
+  getLatestDispatch: () => request<Dispatch | null>("/api/dispatches/latest"),
   signOff: (claimId: string, handlerId: string) =>
     post<Claim>(`${claimPath(claimId)}/sign-off`, { handler_id: handlerId }),
 };

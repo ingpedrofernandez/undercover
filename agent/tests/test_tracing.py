@@ -1,15 +1,13 @@
-import sqlite3
-from contextlib import closing
-
-from agent import harness, work
+from agent import harness
 from agent.tests.test_agent import StubModel, script
-from agent.tests.test_queue import asks_for, queue_agent
+from backend.tests.test_runs import create_dispatch
 
 TYPE = "langfuse.observation.type"
 SESSION = "session.id"
 INPUT = "langfuse.observation.input"
 OUTPUT = "langfuse.observation.output"
 COST = "langfuse.observation.cost_details"
+TAGS = "langfuse.trace.tags"
 
 
 def named(spans, name):
@@ -47,41 +45,25 @@ def test_a_claim_on_its_own_is_one_trace_in_its_session(client, spans):
     assert named(traced, "record_decision")[0].attributes[TYPE] == "tool"
 
 
-def test_a_run_traces_each_claim_on_its_own(client, database, spans):
-    with closing(sqlite3.connect(database)) as db, db:
-        db.execute(
-            "UPDATE claims SET status = 'decided'"
-            " WHERE claim_id NOT IN ('CLM-1001', 'CLM-1003')"
-        )
-    first = script("CLM-1001", "POL-2001", "CUS-3001", "decline", 0)
-    second = script("CLM-1003", "POL-2003", "CUS-3003", "refer", 0)
-    both = StubModel(messages=iter([*first.messages, *second.messages]))
-    work.run_queue(2, queue_agent(*asks_for("CLM-1001", "CLM-1003")), both)
+def test_a_claim_in_a_run_is_tagged_with_the_run(client, spans):
+    run_id = create_dispatch(client)
+    stub = script("CLM-1001", "POL-2001", "CUS-3001", "decline", 0)
+    harness.work_claim("CLM-1001", run_id, stub)
 
     traced = spans()
-    [root] = named(traced, "run-queue")
-    assert root.parent is None
-    assert root.attributes[INPUT].startswith("Run 1. Work the claims queue")
-    assert root.attributes[OUTPUT] == "The summary."
-    run = in_trace(traced, root)
-    [queue] = named(run, "queue-agent")
-    assert queue.attributes[TYPE] == "agent"
-    assert parent(traced, queue) == root
-    assert len(named(run, "work_claim")) == 2
-    assert named(run, "claim-agent") == []
-    assert all(SESSION not in s.attributes for s in run)
+    [root] = named(traced, "work-claim")
+    own = in_trace(traced, root)
+    [agent] = named(own, "claim-agent")
+    assert agent.attributes[TAGS] == (f"run-{run_id}",)
+    session = f"CLM-1001:{thread_of(client, 'CLM-1001')}"
+    assert {s.attributes[SESSION] for s in own} == {session}
 
-    claims = named(traced, "work-claim")
-    assert [c.attributes[INPUT] for c in claims] == ["CLM-1001", "CLM-1003"]
-    assert all(claim.parent is None for claim in claims)
-    for claim in claims:
-        claim_id = claim.attributes[INPUT]
-        own = in_trace(traced, claim)
-        assert len(named(own, "claim-agent")) == 1
-        assert len(named(own, "get_claim")) == 1
-        session = f"{claim_id}:{thread_of(client, claim_id)}"
-        assert {s.attributes[SESSION] for s in own} == {session}
-    assert len({c.context.trace_id for c in claims} | {root.context.trace_id}) == 3
+
+def test_a_claim_with_no_run_has_no_tag(client, spans):
+    stub = script("CLM-1001", "POL-2001", "CUS-3001", "decline", 0)
+    harness.work_claim("CLM-1001", None, stub)
+
+    assert all(TAGS not in span.attributes for span in spans())
 
 
 def test_each_model_call_records_what_openrouter_charged(client, spans):

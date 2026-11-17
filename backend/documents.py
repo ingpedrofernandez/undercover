@@ -18,11 +18,8 @@ WORDING_FIRST = case((sections.c.document == "policy_wording", 0), else_=1)
 
 @router.get("/instructions", operation_id="get_instructions")
 def get_instructions() -> Instructions:
-    """Get the agent's instructions for running the queue and for working a claim."""
-    return Instructions(
-        queue=(INSTRUCTIONS / "queue.md").read_text(encoding="utf-8"),
-        claim=(INSTRUCTIONS / "claim.md").read_text(encoding="utf-8"),
-    )
+    """Get the claim agent's instructions for working a claim."""
+    return Instructions(claim=(INSTRUCTIONS / "claim.md").read_text(encoding="utf-8"))
 
 
 @router.get("/documents/search", operation_id="search_documents")

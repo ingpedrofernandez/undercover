@@ -6,7 +6,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from agent import api, harness
+from agent import api, dispatcher, harness
 from backend.main import app
 from backend.tests.conftest import client, database, resumed
 
@@ -56,5 +56,6 @@ def checkpointer(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_retry_delay(monkeypatch):
-    """Retry failed model calls at once, so the tests stay fast."""
+    """Retry failed model calls and claims at once, so the tests stay fast."""
     monkeypatch.setattr(harness, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(dispatcher, "RETRY_WAIT_SECONDS", 0)

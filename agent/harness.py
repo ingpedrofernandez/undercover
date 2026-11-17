@@ -1,7 +1,5 @@
-"""The harness around both agents: the model, the claim graph and its checkpointer,
-the queue agent and its middleware, tracing, and running them.
-
-work_claim is the one way to work a claim with the claim agent."""
+"""The harness around the claim agent: the model, the claim graph and its nodes,
+the checkpointer, tracing, and work_claim, the one way to work a claim with it."""
 
 import contextvars
 import json
@@ -15,16 +13,8 @@ from functools import cache, partial
 from typing import Annotated, Any, NotRequired, TypedDict, cast
 from uuid import UUID
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import (
-    AgentMiddleware,
-    AgentState,
-    ModelCallLimitMiddleware,
-    ModelRetryMiddleware,
-    ToolCallRequest,
-    ToolErrorMiddleware,
-    hook_config,
-)
+from langchain.agents.middleware import ToolCallRequest
+from langchain_core.exceptions import ModelRateLimitError, ModelTimeoutError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -53,7 +43,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import SecretStr
 
 from agent import api
-from agent.tools import CLAIM_TOOLS, QUEUE_TOOLS, RunContext
+from agent.tools import CLAIM_TOOLS
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-6-luna"
@@ -61,9 +51,10 @@ TIMEOUT_SECONDS = 120
 RETRIES = 2
 RETRY_DELAY_SECONDS = 1.0
 CLAIM_MODEL_CALLS = 30
-QUEUE_MODEL_CALLS = 200
 SCHEMA = "undercover"
 CONNECTIONS = 4
+CONNECTION_WAIT_SECONDS = 600
+UNSETTLED = (ModelRateLimitError, ModelTimeoutError)
 
 Agent = CompiledStateGraph[Any, Any, Any, Any]
 
@@ -252,15 +243,18 @@ def claim_graph(llm: BaseChatModel | None = None) -> Agent:
 
 
 @cache
-def checkpointer() -> BaseCheckpointSaver[str]:
-    """Return the one checkpointer, which saves the claim graph's steps in Supabase.
+def pool() -> ConnectionPool[Connection[DictRow]]:
+    """Return the process's one pool of connections to Supabase, with the
+    checkpointer's tables set up.
 
     It uses the lab's settings, the undercover schema and at most four connections.
+    A claim waits for a free connection rather than fail.
     """
-    pool = ConnectionPool[Connection[DictRow]](
+    connections = ConnectionPool[Connection[DictRow]](
         os.environ["DATABASE_URL"],
         min_size=1,
         max_size=CONNECTIONS,
+        timeout=CONNECTION_WAIT_SECONDS,
         open=True,
         kwargs={
             "autocommit": True,
@@ -269,9 +263,17 @@ def checkpointer() -> BaseCheckpointSaver[str]:
             "options": f"-c search_path={SCHEMA}",
         },
     )
-    saver = PostgresSaver(pool)
-    saver.setup()
-    return saver
+    PostgresSaver(connections).setup()
+    return connections
+
+
+def checkpointer() -> BaseCheckpointSaver[str]:
+    """Return a saver of its own for one claim graph, on the process's one pool.
+
+    A PostgresSaver holds a lock around every read and write, so one saver shared
+    by every claim agent would make them take turns.
+    """
+    return PostgresSaver(pool())
 
 
 def thread(thread_id: str) -> RunnableConfig:
@@ -312,64 +314,12 @@ def run_claim_graph(
     graph: Agent, start: Any, thread_id: str, run_id: int | None
 ) -> None:
     """Run the claim graph on a thread in a run, saving each step before the next
-    starts."""
-    graph.invoke(
-        start, thread(thread_id), context=ClaimContext(run_id), durability="sync"
-    )
-
-
-def missed_claims(run: RunContext) -> list[str]:
-    """Return the waiting claims a run should still work, retries first."""
-    waiting = [c["claim_id"] for c in api.list_claims() if c["status"] == "waiting"]
-    retries = [claim_id for claim_id in waiting if claim_id in run.taken]
-    others = [claim_id for claim_id in waiting if claim_id not in run.taken]
-    return retries + others[: max(run.limit - len(run.taken), 0)]
-
-
-class MissedClaimsCheck(AgentMiddleware[AgentState, RunContext, Any]):
-    """Send the queue agent back to work if it tries to finish with claims missed."""
-
-    @hook_config(can_jump_to=["model"])
-    def after_model(
-        self, state: AgentState, runtime: Runtime[RunContext]
-    ) -> dict[str, Any] | None:
-        """Check the queue when the agent replies without calling a tool."""
-        last = state["messages"][-1]
-        if not isinstance(last, AIMessage) or last.tool_calls:
-            return None
-        missed = missed_claims(runtime.context)
-        if not missed:
-            return None
-        note = (
-            "Before you finish: these claims are still waiting within this run's"
-            f" cap: {', '.join(missed)}. Work them, then finish with your summary."
-        )
-        return {"messages": [HumanMessage(note)], "jump_to": "model"}
-
-
-def queue_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
-    """Retry failed model calls, cap them, hand refusals back to the model and send
-    it back for a missed claim."""
-    return [
-        ModelRetryMiddleware(
-            max_retries=RETRIES, initial_delay=RETRY_DELAY_SECONDS, on_failure="error"
-        ),
-        ModelCallLimitMiddleware(run_limit=QUEUE_MODEL_CALLS, exit_behavior="error"),
-        ToolErrorMiddleware(lambda error, _: refusal(error)),
-        MissedClaimsCheck(),
-    ]
-
-
-def queue_agent(llm: BaseChatModel | None = None) -> Agent:
-    """Build the queue agent, which plans a run and hands each claim over."""
-    return create_agent(
-        llm or model(),
-        tools=QUEUE_TOOLS,
-        system_prompt=api.get_instructions()["queue"],
-        middleware=queue_middleware(),
-        context_schema=RunContext,
-        name="queue-agent",
-    )
+    starts. The claim's trace is tagged with the run, so a whole run can be found
+    together in Langfuse."""
+    config = thread(thread_id)
+    if run_id is not None:
+        config["metadata"] = {"langfuse_tags": [f"run-{run_id}"]}
+    graph.invoke(start, config, context=ClaimContext(run_id), durability="sync")
 
 
 class Tracing(CallbackHandler):
@@ -424,28 +374,6 @@ def in_claim_trace(claim_id: str, thread_id: str, work: Callable[[], str]) -> st
     return line
 
 
-def run_agent(
-    agent: Agent,
-    task: str,
-    on_message: Callable[[AnyMessage], None],
-    **options: Any,
-) -> str:
-    """Run an agent on a task, traced in Langfuse, and return its reply.
-
-    Each new message is passed on to on_message as it arrives.
-    """
-    traced = agent.with_config(callbacks=[tracing()])
-    states = traced.stream(
-        {"messages": [HumanMessage(task)]}, stream_mode="values", **options
-    )
-    messages = next(states)["messages"]
-    for state in states:
-        for message in state["messages"][len(messages) :]:
-            on_message(message)
-        messages = state["messages"]
-    return messages[-1].text
-
-
 def report(claim: dict[str, Any]) -> str:
     """Describe a decided claim in one line, from the backend's record."""
     decision = claim["decision"]
@@ -462,6 +390,8 @@ def outcome(claim_id: str, run: Callable[[], None]) -> str:
     try:
         run()
         problem = "The claim agent finished without recording a decision"
+    except UNSETTLED:
+        raise  # the caller waits and carries the claim on, as the same try
     except Exception as error:  # one failed claim must never stop the others
         problem = f"{type(error).__name__}: {error}".splitlines()[0]
     claim = api.get_claim(claim_id)
@@ -503,7 +433,9 @@ def work_claim(
     """Carry a claim in progress on, or start a waiting one, and report one line.
 
     This is the one way to work a claim with the claim agent. The time it takes
-    is recorded with the run, or with none when run_id is None.
+    is recorded with the run, or with none when run_id is None. A rate limit or a
+    timeout is raised without settling the claim, so it stays in progress and
+    carries on from its last saved step when worked again.
     """
     claim = api.get_claim(claim_id)
     graph = claim_graph(llm)

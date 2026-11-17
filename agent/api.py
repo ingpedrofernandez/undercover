@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 BACKEND_URL = "http://127.0.0.1:8000"
+CONNECT_RETRIES = 6
 
 
 class ApiError(Exception):
@@ -12,8 +13,13 @@ class ApiError(Exception):
 
 
 def client() -> httpx.Client:
-    """Return a client for the backend."""
-    return httpx.Client(base_url=BACKEND_URL, timeout=30)
+    """Return a client for the backend.
+
+    It retries connecting for about 15 seconds, so the agent's service can start
+    while the backend is still starting beside it.
+    """
+    transport = httpx.HTTPTransport(retries=CONNECT_RETRIES)
+    return httpx.Client(base_url=BACKEND_URL, timeout=30, transport=transport)
 
 
 def call(
@@ -28,11 +34,6 @@ def call(
     if response.is_error:
         raise ApiError(f"{response.status_code}: {response.json()['detail']}")
     return response.json()
-
-
-def list_claims() -> list[dict[str, Any]]:
-    """List every claim in the queue."""
-    return call("GET", "/api/claims")
 
 
 def get_claim(claim_id: str) -> dict[str, Any]:
@@ -51,7 +52,7 @@ def get_claim_history(customer_id: str) -> list[dict[str, Any]]:
 
 
 def get_instructions() -> dict[str, str]:
-    """Get the agent's instructions for running the queue and for working a claim."""
+    """Get the claim agent's instructions for working a claim."""
     return call("GET", "/api/instructions")
 
 
@@ -142,21 +143,22 @@ def record_failure(claim_id: str, reason: str) -> dict[str, Any]:
     return call("POST", f"/api/claims/{claim_id}/failure", {"reason": reason})
 
 
-def start_run(limit: int) -> dict[str, Any]:
-    """Start a run of the agent over the queue, capped at limit claims."""
-    return call("POST", "/api/runs", {"limit": limit})
+def create_dispatch(agents: int, model: str, reasoning_effort: str) -> dict[str, Any]:
+    """Record a new dispatch over the queue, with agents claim agents at once."""
+    body = {"agents": agents, "model": model, "reasoning_effort": reasoning_effort}
+    return call("POST", "/api/dispatches", body)
 
 
-def get_latest_run() -> dict[str, Any] | None:
-    """Get the most recent run, or None before the first run."""
-    return call("GET", "/api/runs/latest")
+def take_claims(run_id: int, skip: list[str]) -> list[str]:
+    """Pick the claims a run works, oldest submitted first, leaving out skip."""
+    return call("POST", f"/api/runs/{run_id}/claims", {"skip": skip})
 
 
-def write_todos(run_id: int, todos: list[dict[str, str]]) -> dict[str, Any]:
-    """Replace a run's to-do list."""
-    return call("PUT", f"/api/runs/{run_id}/todos", {"todos": todos})
+def finish_run(run_id: int) -> dict[str, Any]:
+    """Finish a run that is still running."""
+    return call("POST", f"/api/runs/{run_id}/finish")
 
 
-def finish_run(run_id: int, summary: str) -> dict[str, Any]:
-    """Finish a run with a summary for the handlers."""
-    return call("POST", f"/api/runs/{run_id}/finish", {"summary": summary})
+def stop_runs() -> list[dict[str, Any]]:
+    """Mark every run still running as stopped, and return them."""
+    return call("POST", "/api/runs/stop")

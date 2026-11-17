@@ -355,3 +355,12 @@ def test_model_keeps_the_reasoning_openrouter_sends(monkeypatch):
     assert message.additional_kwargs["reasoning_content"] == (
         "The delay was over six hours."
     )
+
+
+def test_the_command_line_needs_a_claim_id(capsys):
+    with pytest.raises(SystemExit) as stopped:
+        cli.main([])
+    assert stopped.value.code == 2
+    error = capsys.readouterr().err
+    assert error.startswith("usage: uv run -m agent [-h] claim_id")
+    assert "the following arguments are required: claim_id" in error

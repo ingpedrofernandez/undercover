@@ -105,11 +105,20 @@ runs = Table(
     "runs",
     metadata,
     Column("run_id", Integer, primary_key=True),
-    Column("claim_limit", Integer, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("agents", Integer, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("reasoning_effort", Text, nullable=False),
+    Column("status", Text, nullable=False),
     Column("started_at", Text, nullable=False),
     Column("finished_at", Text),
-    Column("summary", Text),
-    Column("todos", Text, nullable=False, server_default="[]"),
+)
+run_claims = Table(
+    "run_claims",
+    metadata,
+    Column("run_id", Integer, ForeignKey("runs.run_id"), primary_key=True),
+    Column("claim_id", Text, ForeignKey("claims.claim_id"), primary_key=True),
+    Column("position", Integer, nullable=False),
 )
 model_calls = Table(
     "model_calls",

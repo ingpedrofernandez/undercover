@@ -64,27 +64,6 @@ export const recordFailure = (
     request.post(`/api/claims/${claimId}/failure`, { data: { reason } }),
   );
 
-export async function startRun(request: Request, limit: number) {
-  const response = await succeeds(
-    request.post("/api/runs", { data: { limit } }),
-  );
-  return ((await response.json()) as { run_id: number }).run_id;
-}
-
-export const writeTodos = (
-  request: Request,
-  runId: number,
-  todos: { content: string; status: string }[],
-) =>
-  succeeds(
-    request.put(`/api/runs/${String(runId)}/todos`, { data: { todos } }),
-  );
-
-export const finishRun = (request: Request, runId: number, summary: string) =>
-  succeeds(
-    request.post(`/api/runs/${String(runId)}/finish`, { data: { summary } }),
-  );
-
 export async function resumedClaims(request: Request): Promise<string[]> {
   const response = await succeeds(request.get(`${AGENT_STAND_IN}/resumed`));
   return (await response.json()) as string[];

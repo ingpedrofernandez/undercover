@@ -27,9 +27,7 @@ test("the header opens the instructions", async ({ page }) => {
   await expect(page).toHaveURL("/instructions");
   const part = (name: string) =>
     page.locator("section", { has: page.getByRole("heading", { name }) });
-  await expect(
-    part("Running the queue").getByText(/You run UnderCover Travel/),
-  ).toBeVisible();
+  await expect(page.getByText(/You run UnderCover Travel/)).toHaveCount(0);
   await expect(
     part("Working a claim").getByText(/You decide one travel insurance/),
   ).toBeVisible();

@@ -1,11 +1,7 @@
-"""Every tool the UnderCover Agent uses, named after the backend operations."""
+"""Every tool the claim agent uses, named after the backend operations."""
 
-import threading
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -24,15 +20,6 @@ Benefit = Literal[
     "passport",
     "emergency_medical",
 ]
-
-ONE_CLAIM_AT_A_TIME = threading.Lock()
-
-
-class Todo(BaseModel):
-    """One item on the queue agent's to-do list."""
-
-    content: str
-    status: Literal["to_do", "in_progress", "done", "left_for_handler"]
 
 
 class PayoutLine(BaseModel):
@@ -62,16 +49,6 @@ class PayoutLine(BaseModel):
         description="For meals without receipts, the length of the delay in hours,"
         " otherwise 0"
     )
-
-
-@dataclass
-class RunContext:
-    """The run the queue agent is working, which its tools reach through ToolRuntime."""
-
-    run_id: int
-    limit: int
-    work_claim: Callable[[str], str]
-    taken: set[str] = field(default_factory=set)
 
 
 @tool
@@ -143,32 +120,6 @@ def record_decision(
     return api.record_decision(claim_id, decision, payout, section, reason)
 
 
-@tool
-def list_claims() -> list[dict[str, Any]]:
-    """List every claim in the queue with its status, decision and payout."""
-    return api.list_claims()
-
-
-@tool
-def write_todos(todos: list[Todo], runtime: ToolRuntime[RunContext]) -> str:
-    """Save your whole to-do list for this run, which the claims team watches."""
-    api.write_todos(runtime.context.run_id, [todo.model_dump() for todo in todos])
-    return f"Saved {len(todos)} items."
-
-
-@tool
-def work_claim(claim_id: str, runtime: ToolRuntime[RunContext]) -> str:
-    """Hand one claim to a claim agent, which works it and reports back in a line."""
-    run = runtime.context
-    with ONE_CLAIM_AT_A_TIME:  # the model can ask for several claims in one turn
-        if claim_id not in run.taken and len(run.taken) >= run.limit:
-            cap = f"the run's cap of {run.limit} claims is reached"
-            return f"{claim_id}  not started: {cap}"
-        line = run.work_claim(claim_id)
-        run.taken.add(claim_id)
-        return line
-
-
 CLAIM_TOOLS = [
     get_claim,
     get_policy,
@@ -179,4 +130,3 @@ CLAIM_TOOLS = [
     calculate_payout,
     record_decision,
 ]
-QUEUE_TOOLS = [list_claims, write_todos, work_claim]

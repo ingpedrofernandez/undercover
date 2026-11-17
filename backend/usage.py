@@ -3,8 +3,9 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import Connection, insert, select
 
-from backend.database import Database, claims, model_calls, now, runs, work_times
+from backend.database import Database, claims, model_calls, now, work_times
 from backend.models import ModelCall, ModelCallRequest, WorkTime, WorkTimeRequest
+from backend.run_records import find_run
 
 router = APIRouter(prefix="/api/claims")
 
@@ -14,10 +15,8 @@ def check_known(db: Connection, claim_id: str, run_id: int | None) -> None:
     found = select(claims.c.claim_id).where(claims.c.claim_id == claim_id)
     if db.execute(found).first() is None:
         raise HTTPException(404, f"Claim {claim_id} not found")
-    if run_id is None:
-        return
-    if db.execute(select(runs.c.run_id).where(runs.c.run_id == run_id)).first() is None:
-        raise HTTPException(404, f"Run {run_id} not found")
+    if run_id is not None:
+        find_run(db, run_id)
 
 
 @router.post("/{claim_id}/model-calls", operation_id="record_model_call")

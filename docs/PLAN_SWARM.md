@@ -186,6 +186,8 @@ The agent's modules depend on each other in one direction: `api` ← `tools` ←
 3. `backend/agent_client.py` posts with a bare `httpx.post`. It becomes `backend/agent_service.py`, the name in the brief, with one `client()` like `agent/api.py`'s, so the agent's tests can wire the backend to the service in-process (phase 3).
 4. The run panel, `e2e/run.spec.ts` and `backend/runs.py` are built on the to-do list, which goes (phases 2 and 3).
 5. `agent/tests/test_tracing.py` borrows helpers from `test_queue.py`, which goes with the queue agent (phase 2).
+6. Found while building phase 2: in LangGraph 1.2.12 a node's `error_handler` caught a failed `Send` task only when it ran alone. With several `Send` tasks in one step, the runner marked the handled failure as not to be raised again, but the thread executor's `__exit__` never checked that mark and raised it anyway, which would stop the whole dispatch. LangGraph 1.2.22 fixes it, so the project now depends on `langgraph>=1.2.22`.
+7. Found while building phase 2: the end-to-end sign-off test read the stand-in's record straight after the page changed, but the backend calls the agent's service in a background task after it answers, so about half the runs read an empty record about 60 ms too early. The test now waits for the call with `expect.poll`.
 
 ### Dashboard
 
@@ -236,31 +238,31 @@ Move the work on one claim into `harness.work_claim(claim_id, run_id)`; the queu
 
 Reshape `runs` and add `run_claims`, with `create_dispatch`, `get_latest_dispatch`, `take_claims`, `finish_run` and `stop_runs`. Build `agent/dispatcher.py` and `work.dispatch`. Give each claim graph a saver of its own on the shared pool. Tag each claim's trace with its run. The service gets `start_dispatch` and stops unfinished runs on startup. Remove the queue agent, its middleware, `queue.md`, the to-do list, its e2e test and `uv run -m agent` without a claim id. The run panel shows the latest dispatch's line, and the instructions page only the claim agent's. Update rule 10.
 
-- [ ] pytest: `create_dispatch` returns a running dispatch with its N, model and effort. `get_latest_dispatch` is null before the first, then the newest. N of 0 or 26 returns 422
-- [ ] pytest: on a dispatch, `take_claims` returns the queue's claims in progress and waiting, oldest submitted first, leaving out claims decided, waiting for sign-off or left for a handler and the claims in `skip`, and records them on the run. 409 for a run that isn't running, 404 for an unknown run
-- [ ] pytest: `finish_run` finishes a running run and returns 409 the second time. `stop_runs` marks every running run stopped and leaves finished ones alone
-- [ ] pytest: a dispatch played out through the API, with an approval paid, an approval held, a decline, a referral, a claim left for a handler and a claim in progress, has in `get_latest_dispatch` each claim with its state, decision, payout, first start, time and cost, the model cost as the sum of its model calls, and once finished the summary: approved 2, declined 1, referred 1, the held claim and payout, the claim left for a handler and the claim in progress. A running dispatch has no summary
-- [ ] A pytest test checks the dispatcher's nodes are `list_claims`, `work_claim`, `list_retries` and `retry_claim`, with the edges in the design
-- [ ] Dispatcher test, with `harness.work_claim` replaced by a recorder that sleeps briefly: over 10 claims, N=3 never has more than 3 at once and reaches 3, and N=1 works one at a time
-- [ ] Stub model test: a dispatch at N=3 works every waiting claim, starting them oldest submitted first, with one decision each, and finishes the run
-- [ ] Stub model test: claims left in progress by a stopped claim graph are carried on by the next dispatch as the same attempts: the same thread, failure count 0, no `error` step, the earlier steps kept and one decision
-- [ ] Stub model test: a claim whose model raises `ModelRateLimitError` three calls running, past the `agent` node's two retries, waits and carries on from its last saved step on the same thread, with one decision, no `error` step and failure count 0, and both pieces of its work are recorded with the run
-- [ ] Stub model test: a claim that hits rate limits on every call stays in progress after the worker's retries run out, with failure count 0 and no `error` step, while the other claims are decided, the dispatch finishes, and its summary has the claim still in progress
-- [ ] Stub model test: a claim that fails with any other error goes back to the queue and is tried once more after the first round, on a new thread, and decided. A claim that fails both times is left for a handler, and the dispatch still finishes
-- [ ] Stub model test: a claim in `skip` is not taken or worked. A claim held for sign-off waits, and the next dispatch doesn't take it
-- [ ] pytest: the model class, given an HTTP transport that answers 429 or times out, raises `ModelRateLimitError` or `ModelTimeoutError`, without calling a model
-- [ ] pytest: two claim graphs get two different savers on the one pool, which holds at most 4 connections and waits for a free one longer than psycopg_pool's default 30 seconds
-- [ ] Tracing test: a claim worked in a dispatch is one `work-claim` trace in its session, tagged `run-<run id>`, and a claim worked with no run has no tag
-- [ ] Service tests: `start_dispatch` returns 202 and works the dispatch in the background. While a run is going, a second start returns 409 "A dispatch or evaluation is already running". Its operations follow the API rules
-- [ ] Service test: starting the service marks a running dispatch stopped
-- [ ] Tests cover the command line: a claim id in progress is carried on, a waiting one is started, and with no claim id it prints its usage and exits with an error
-- [ ] `grep -rn "queue_agent\|write_todos\|MissedClaimsCheck\|run_queue\|catch_up\|todos\|create_agent\|AgentMiddleware" agent backend dashboard/src e2e` finds nothing, and `backend/instructions/queue.md` is gone
-- [ ] vitest: the run panel shows "No dispatch yet", then the latest dispatch's line with its N and whether it's running, finished or stopped. The instructions page shows only the claim agent's instructions
-- [ ] `npm run seed` works, and through the Supabase MCP server `undercover.runs` has the new columns and no `todos`, and `run_claims`, `model_calls` and `work_times` exist
-- [ ] With `npm run dev`, `curl -s -X POST localhost:8000/api/dispatches` (standing in for the service) makes a running dispatch, and touching `agent/service.py`, so uvicorn reloads the service, leaves it stopped in `curl -s localhost:8000/api/dispatches/latest`. No model is called
-- [ ] `npm run dev` started five times on Windows comes up every time with `curl -s localhost:8002/api/health` returning `{"status": "ok"}`
-- [ ] `docs/CODE_STANDARDS.md` rule 10 names the five parts of the agent
-- [ ] `npm run check` passes
+- [x] pytest: `create_dispatch` returns a running dispatch with its N, model and effort. `get_latest_dispatch` is null before the first, then the newest. N of 0 or 26 returns 422
+- [x] pytest: on a dispatch, `take_claims` returns the queue's claims in progress and waiting, oldest submitted first, leaving out claims decided, waiting for sign-off or left for a handler and the claims in `skip`, and records them on the run. 409 for a run that isn't running, 404 for an unknown run
+- [x] pytest: `finish_run` finishes a running run and returns 409 the second time. `stop_runs` marks every running run stopped and leaves finished ones alone
+- [x] pytest: a dispatch played out through the API, with an approval paid, an approval held, a decline, a referral, a claim left for a handler and a claim in progress, has in `get_latest_dispatch` each claim with its state, decision, payout, first start, time and cost, the model cost as the sum of its model calls, and once finished the summary: approved 2, declined 1, referred 1, the held claim and payout, the claim left for a handler and the claim in progress. A running dispatch has no summary
+- [x] A pytest test checks the dispatcher's nodes are `list_claims`, `work_claim`, `list_retries` and `retry_claim`, with the edges in the design
+- [x] Dispatcher test, with `harness.work_claim` replaced by a recorder that sleeps briefly: over 10 claims, N=3 never has more than 3 at once and reaches 3, and N=1 works one at a time
+- [x] Stub model test: a dispatch at N=3 works every waiting claim, starting them oldest submitted first, with one decision each, and finishes the run
+- [x] Stub model test: claims left in progress by a stopped claim graph are carried on by the next dispatch as the same attempts: the same thread, failure count 0, no `error` step, the earlier steps kept and one decision
+- [x] Stub model test: a claim whose model raises `ModelRateLimitError` three calls running, past the `agent` node's two retries, waits and carries on from its last saved step on the same thread, with one decision, no `error` step and failure count 0, and both pieces of its work are recorded with the run
+- [x] Stub model test: a claim that hits rate limits on every call stays in progress after the worker's retries run out, with failure count 0 and no `error` step, while the other claims are decided, the dispatch finishes, and its summary has the claim still in progress
+- [x] Stub model test: a claim that fails with any other error goes back to the queue and is tried once more after the first round, on a new thread, and decided. A claim that fails both times is left for a handler, and the dispatch still finishes
+- [x] Stub model test: a claim in `skip` is not taken or worked. A claim held for sign-off waits, and the next dispatch doesn't take it
+- [x] pytest: the model class, given an HTTP transport that answers 429 or times out, raises `ModelRateLimitError` or `ModelTimeoutError`, without calling a model
+- [x] pytest: two claim graphs get two different savers on the one pool, which holds at most 4 connections and waits for a free one longer than psycopg_pool's default 30 seconds
+- [x] Tracing test: a claim worked in a dispatch is one `work-claim` trace in its session, tagged `run-<run id>`, and a claim worked with no run has no tag
+- [x] Service tests: `start_dispatch` returns 202 and works the dispatch in the background. While a run is going, a second start returns 409 "A dispatch or evaluation is already running". Its operations follow the API rules
+- [x] Service test: starting the service marks a running dispatch stopped
+- [x] Tests cover the command line: a claim id in progress is carried on, a waiting one is started, and with no claim id it prints its usage and exits with an error
+- [x] `grep -rn "queue_agent\|write_todos\|MissedClaimsCheck\|run_queue\|catch_up\|todos\|create_agent\|AgentMiddleware" agent backend dashboard/src e2e` finds nothing, and `backend/instructions/queue.md` is gone
+- [x] vitest: the run panel shows "No dispatch yet", then the latest dispatch's line with its N and whether it's running, finished or stopped. The instructions page shows only the claim agent's instructions
+- [x] `npm run seed` works, and through the Supabase MCP server `undercover.runs` has the new columns and no `todos`, and `run_claims`, `model_calls` and `work_times` exist
+- [x] With `npm run dev`, `curl -s -X POST localhost:8000/api/dispatches` (standing in for the service) makes a running dispatch, and starting `npm run dev` again leaves it stopped in `curl -s localhost:8000/api/dispatches/latest`. No model is called. (Touching `agent/service.py` was the first try: uvicorn's reloader stops its worker on Windows with a Ctrl+C sent to the console, and `npm run dev` started from a shell with no console never gets it, so the old worker kept running. In a terminal the reload works as usual.)
+- [x] `npm run dev` started five times on Windows, with a dispatch left running before each start, comes up every time in 7 to 8 seconds with `curl -s localhost:8002/api/health` returning `{"status": "ok"}`, and each time the dispatch left running is stopped
+- [x] `docs/CODE_STANDARDS.md` rule 10 names the five parts of the agent
+- [x] `npm run check` passes
 
 ## Phase 3: Starting a dispatch from the dashboard
 

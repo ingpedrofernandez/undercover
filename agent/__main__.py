@@ -1,6 +1,7 @@
-"""Work the queue with the UnderCover Agent: uv run -m agent [--limit N] [CLM-1001]
+"""Work one claim with the UnderCover Agent: uv run -m agent CLM-1001
 
-A run first finishes a run that was stopped and carries on every claim in progress.
+A claim in progress carries on from where it stopped, and a waiting claim is
+started. Dispatches are started from the dashboard.
 """
 
 import argparse
@@ -11,30 +12,19 @@ from typing import cast
 from dotenv import load_dotenv
 
 from agent import api, harness
-from agent.work import catch_up, run_queue
 
 
 def main(args: list[str]) -> None:
-    """Work one claim, or catch up and run the queue capped at --limit or waiting."""
+    """Work the claim named on the command line and print its line."""
     parser = argparse.ArgumentParser(
-        prog="uv run -m agent", description="Work the claims queue."
+        prog="uv run -m agent", description="Work one claim."
     )
-    parser.add_argument("claim_id", nargs="?", help="work only this claim")
-    parser.add_argument("--limit", type=int, help="the most claims the run takes on")
+    parser.add_argument("claim_id", help="the claim to work")
     options = parser.parse_args(args)
-    if options.claim_id:
-        try:
-            print(harness.work_claim(options.claim_id, None))
-        except api.ApiError as error:
-            print(f"{options.claim_id}  not started: {error}")
-        return
-    catch_up()
-    waiting = sum(claim["status"] == "waiting" for claim in api.list_claims())
-    limit = options.limit or waiting
-    if limit == 0:
-        print("No claims are waiting.")
-        return
-    print(run_queue(limit))
+    try:
+        print(harness.work_claim(options.claim_id, None))
+    except api.ApiError as error:
+        print(f"{options.claim_id}  not started: {error}")
 
 
 if __name__ == "__main__":

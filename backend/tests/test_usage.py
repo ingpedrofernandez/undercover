@@ -1,11 +1,9 @@
 import pytest
 
+from backend.tests.test_runs import create_dispatch
+
 CALL = {"run_id": None, "input_tokens": 1200, "output_tokens": 80, "cost": 0.0021}
 WORK = {"run_id": None, "started_at": "2026-11-17T10:00:00+00:00", "seconds": 42.5}
-
-
-def start_run(client):
-    return client.post("/api/runs", json={"limit": 1}).json()["run_id"]
 
 
 def test_a_model_call_is_recorded_with_no_run(client):
@@ -18,7 +16,7 @@ def test_a_model_call_is_recorded_with_no_run(client):
 
 
 def test_a_model_call_is_recorded_with_its_run(client):
-    run_id = start_run(client)
+    run_id = create_dispatch(client)
     body = CALL | {"run_id": run_id}
     recorded = client.post("/api/claims/CLM-1001/model-calls", json=body).json()
     assert recorded["run_id"] == run_id
@@ -28,7 +26,7 @@ def test_a_piece_of_work_is_recorded_with_or_without_a_run(client):
     recorded = client.post("/api/claims/CLM-1001/work-times", json=WORK).json()
     assert recorded["claim_id"] == "CLM-1001"
     assert {k: recorded[k] for k in WORK} == WORK
-    run_id = start_run(client)
+    run_id = create_dispatch(client)
     body = WORK | {"run_id": run_id}
     recorded = client.post("/api/claims/CLM-1001/work-times", json=body).json()
     assert recorded["run_id"] == run_id
