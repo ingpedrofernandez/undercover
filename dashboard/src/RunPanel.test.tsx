@@ -24,6 +24,8 @@ const running: Dispatch = {
   agents: 5,
   model: "openai/gpt-6-luna",
   reasoning_effort: "low",
+  eval_set: null,
+  tiny: null,
   status: "running",
   started_at: "2026-11-17T14:02:00+00:00",
   finished_at: null,

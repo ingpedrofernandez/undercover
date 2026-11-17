@@ -307,15 +307,15 @@ Seed `held_out_claims` and `handler_decisions` from `data/evals/`. Add `evaluati
 
 Build the Scoreboard and evaluation pages, the Scoreboard link, and a copy's claim page without the sign-off form. A new `e2e/scoreboard.spec.ts` starts an evaluation and plays one out.
 
-- [ ] vitest: the scoreboard's form sends the set, `tiny` and N (3 to start with) and says "Evaluation started", or shows the 409 and 503 messages
-- [ ] vitest: the scoreboard lists evaluations newest first, with the set, N, model and effort, state and every measure formatted, each linking to its evaluation, and a stopped one marked stopped
-- [ ] vitest: the evaluation page shows each claim with the handler's decision and payout beside the agent's, marks a wrong decision and a wrong amount, says a claim with no decision counts as a referral, and links each copy to its page
-- [ ] vitest: a copy's decision panel has no sign-off form and, when held, says an evaluation's copy is never signed off
-- [ ] e2e: on the scoreboard the handler chooses the held-out set, just the five `tiny` claims and N=5, and starts an evaluation; the stand-in has been asked for an evaluation of the held-out set, `tiny`, with 5 agents
-- [ ] e2e: the test plays out an evaluation of the evaluation set's `tiny` claims through the API, with one right approval, one wrong decision, one approval over $1,000 held, one wrong amount and one claim left undecided, and finishes it. The scoreboard shows it with every measure; it opens to its claims with the misses marked; a copy's link opens its claim page, where the held copy has no sign-off form
-- [ ] e2e: the queue page's counts are the same before and after the evaluation
-- [ ] e2e: the header has Queue, Scoreboard and Instructions, and the other tests still pass
-- [ ] `npm run check` passes
+- [x] vitest: the scoreboard's form sends the set, `tiny` and N (3 to start with) and says "Evaluation started", or shows the 409 and 503 messages
+- [x] vitest: the scoreboard lists evaluations newest first, with the set, N, model and effort, state and every measure formatted, each linking to its evaluation, and a stopped one marked stopped
+- [x] vitest: the evaluation page shows each claim with the handler's decision and payout beside the agent's, marks a wrong decision and a wrong amount, says a claim with no decision counts as a referral, and links each copy to its page
+- [x] vitest: a copy's decision panel has no sign-off form and, when held, says an evaluation's copy is never signed off
+- [x] e2e: on the scoreboard the handler chooses the held-out set, just the five `tiny` claims and N=5, and starts an evaluation; the stand-in has been asked for an evaluation of the held-out set, `tiny`, with 5 agents
+- [x] e2e: the test plays out an evaluation of the evaluation set's `tiny` claims through the API, with one right approval, one wrong decision, one approval over $1,000 held, one wrong amount and one claim left undecided, and finishes it. The scoreboard shows it with every measure; it opens to its claims with the misses marked; a copy's link opens its claim page, where the held copy has no sign-off form
+- [x] e2e: after the evaluation the queue still lists its 25 claims and none of the copies. (Playwright runs the files side by side and the other tests change the queue's claims meanwhile, so the queue page's counts before and after are checked in the live run in phase 6 instead.)
+- [x] e2e: the header has Queue, Scoreboard and Instructions, and the other tests still pass
+- [x] `npm run check` passes
 
 ## Phase 6: The live runs, and the docs
 

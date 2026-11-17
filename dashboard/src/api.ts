@@ -65,6 +65,7 @@ export interface Claim {
   documents: ClaimDocument[];
   status: Status;
   thread_id: string | null;
+  evaluation_id: number | null;
   decision: Decision | null;
   payment: Payment | null;
 }
@@ -117,6 +118,7 @@ export interface Instructions {
 
 export type RunStatus = "running" | "finished" | "stopped";
 export type Effort = "low" | "none";
+export type EvalSet = "evaluation" | "held_out";
 
 export interface Run {
   run_id: number;
@@ -124,6 +126,8 @@ export interface Run {
   agents: number;
   model: string;
   reasoning_effort: Effort;
+  eval_set: EvalSet | null;
+  tiny: boolean | null;
   status: RunStatus;
   started_at: string;
   finished_at: string | null;
@@ -159,6 +163,41 @@ export interface Dispatch extends Run {
   work_seconds: number;
   claims: RunClaim[];
   summary: DispatchSummary | null;
+}
+
+export interface Measures {
+  decision_accuracy: number;
+  accuracy: number;
+  cost_of_mistakes: number;
+  straight_through: number;
+  cost_per_claim: number;
+  seconds_per_claim: number;
+  run_seconds: number | null;
+}
+
+export interface ScoredClaim {
+  claim_id: string;
+  source_id: string;
+  status: Status;
+  handler_decision: DecisionKind;
+  handler_payout: number;
+  decision: DecisionKind | null;
+  payout: number | null;
+  reason: string | null;
+  right_decision: boolean;
+  right: boolean;
+  mistake_cost: number;
+  seconds: number;
+  cost: number;
+}
+
+export interface EvaluationSummary extends Run {
+  claim_count: number;
+  measures: Measures;
+}
+
+export interface Evaluation extends EvaluationSummary {
+  claims: ScoredClaim[];
 }
 
 export class ApiError extends Error {
@@ -208,6 +247,15 @@ export const api = {
   getLatestDispatch: () => request<Dispatch | null>("/api/dispatches/latest"),
   startDispatch: (agents: number) =>
     post<{ status: string }>("/api/dispatches/start", { agents }),
+  startEvaluation: (agents: number, evalSet: EvalSet, tiny: boolean) =>
+    post<{ status: string }>("/api/evaluations/start", {
+      agents,
+      eval_set: evalSet,
+      tiny,
+    }),
+  listEvaluations: () => request<EvaluationSummary[]>("/api/evaluations"),
+  getEvaluation: (runId: number) =>
+    request<Evaluation>(`/api/evaluations/${String(runId)}`),
   signOff: (claimId: string, handlerId: string) =>
     post<Claim>(`${claimPath(claimId)}/sign-off`, { handler_id: handlerId }),
 };

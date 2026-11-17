@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { ApiError, api, type Claim } from "../api";
 import { StatusChip } from "../components/Chips";
 import { DecisionPanel } from "../components/DecisionPanel";
@@ -25,6 +25,14 @@ export function ClaimPage() {
     <>
       <div className="claim-heading">
         <p className="mono muted">{claim.claim_id}</p>
+        {claim.evaluation_id !== null && (
+          <p className="small">
+            A copy in{" "}
+            <Link to={`/evaluations/${String(claim.evaluation_id)}`}>
+              evaluation {claim.evaluation_id}
+            </Link>
+          </p>
+        )}
         <h1>{claim.summary}</h1>
         <StatusChip status={claim.status} />
       </div>

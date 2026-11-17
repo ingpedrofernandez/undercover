@@ -23,6 +23,9 @@ test("a claim opens from the queue", async ({ page }) => {
 
 test("the header opens the instructions", async ({ page }) => {
   await page.goto("/");
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).getByRole("link"),
+  ).toHaveText(["Queue", "Scoreboard", "Instructions"]);
   await page.getByRole("link", { name: "Instructions" }).click();
   await expect(page).toHaveURL("/instructions");
   const part = (name: string) =>

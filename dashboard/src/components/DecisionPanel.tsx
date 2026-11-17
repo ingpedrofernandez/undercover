@@ -16,6 +16,30 @@ function at(signedOffAt: string | null): string {
   return signedOffAt ? ` at ${time(signedOffAt)}` : "";
 }
 
+// A payout held for sign-off: the form, or a note on an evaluation's copy,
+// which nobody signs off.
+function Held({
+  claim,
+  payout,
+  onSignedOff,
+}: Readonly<{ claim: Claim; payout: number; onSignedOff: () => void }>) {
+  if (claim.evaluation_id !== null)
+    return (
+      <p className="muted">
+        Held for sign-off. An evaluation's copy is never signed off.
+      </p>
+    );
+  return (
+    <div className="sign-off">
+      <p>
+        The payment of <span className="mono">{money(payout)}</span> is over the
+        approval limit and waits for a handler's sign-off.
+      </p>
+      <SignOffForm claimId={claim.claim_id} onSignedOff={onSignedOff} />
+    </div>
+  );
+}
+
 export function DecisionPanel({
   claim,
   onSignedOff,
@@ -58,14 +82,11 @@ export function DecisionPanel({
         </p>
       )}
       {decision && claim.status === "waiting_for_sign_off" && (
-        <div className="sign-off">
-          <p>
-            The payment of{" "}
-            <span className="mono">{money(decision.payout)}</span> is over the
-            approval limit and waits for a handler's sign-off.
-          </p>
-          <SignOffForm claimId={claim.claim_id} onSignedOff={onSignedOff} />
-        </div>
+        <Held
+          claim={claim}
+          payout={decision.payout}
+          onSignedOff={onSignedOff}
+        />
       )}
     </section>
   );

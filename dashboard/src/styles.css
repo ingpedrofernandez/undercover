@@ -202,6 +202,23 @@ p {
   margin-bottom: 20px;
 }
 
+.result-right {
+  background: var(--sea-green);
+}
+
+.result-amount {
+  background: var(--marigold);
+}
+
+.result-decision {
+  background: var(--raspberry);
+  color: #ffffff;
+}
+
+.table tbody tr.miss td:first-child {
+  box-shadow: inset 4px 0 0 var(--raspberry);
+}
+
 .run h3 {
   margin: 20px 0 6px;
 }

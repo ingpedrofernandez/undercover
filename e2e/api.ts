@@ -122,3 +122,23 @@ export const recordWorkTime = (
 
 export const finishRun = (request: Request, runId: number) =>
   succeeds(request.post(`/api/runs/${String(runId)}/finish`));
+
+export async function createEvaluation(
+  request: Request,
+  evalSet: string,
+  tiny: boolean,
+  agents: number,
+) {
+  const response = await succeeds(
+    request.post("/api/evaluations", {
+      data: {
+        agents,
+        eval_set: evalSet,
+        tiny,
+        model: "openai/gpt-6-luna",
+        reasoning_effort: "low",
+      },
+    }),
+  );
+  return ((await response.json()) as { run_id: number }).run_id;
+}
