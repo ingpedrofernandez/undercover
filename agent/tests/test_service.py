@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from agent import api, harness, service
 from agent.tests.test_agent import StubModel, claim, script
+from backend import agent_service
 from backend.tests.test_openapi import follows_the_api_rules
 from backend.tests.test_runs import create_dispatch
 
@@ -104,3 +105,12 @@ def test_a_dispatch_skips_a_claim_being_resumed(client, database, monkeypatch):
     monkeypatch.setattr(service, "RESUMING", {"CLM-1003"})
     TestClient(service.app).post("/api/dispatches", json={"agents": 3})
     assert client.get("/api/dispatches/latest").json()["claims"] == []
+
+
+def test_the_backend_passes_on_a_refused_start(client, monkeypatch):
+    monkeypatch.setattr(agent_service, "client", lambda: TestClient(service.app))
+    monkeypatch.setattr(harness, "pool", lambda: None)
+    with service.ONE_RUN_AT_A_TIME:
+        response = client.post("/api/dispatches/start", json={"agents": 3})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A dispatch or evaluation is already running"

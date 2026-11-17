@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy import Connection, RowMapping, insert, select, update
 
-from backend import agent_client
+from backend import agent_service
 from backend.database import (
     Database,
     claims,
@@ -298,5 +298,5 @@ def sign_off_claim(
         .values(signed_off_by=handler.name, signed_off_at=now())
     )
     set_status(db, claim_id, "in_progress")
-    background.add_task(agent_client.resume_claim, claim_id)
+    background.add_task(agent_service.resume_claim, claim_id)
     return to_claim(find_claim(db, claim_id))

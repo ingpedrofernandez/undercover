@@ -268,19 +268,19 @@ Reshape `runs` and add `run_claims`, with `create_dispatch`, `get_latest_dispatc
 
 Rename `backend/agent_client.py` to `backend/agent_service.py`, with one `client()`, and add `start_dispatch`. The backend's `start_dispatch` asks the service and relays its answer. The queue page gets the start form, and the run panel shows the dispatch's claims, cost, time and summary. The e2e stand-in records the starts it's asked for, and a new `e2e/dispatch.spec.ts` replaces `run.spec.ts`.
 
-- [ ] pytest: the backend's `start_dispatch` with N=5 asks the service once with 5, returns 202 and creates no run
-- [ ] pytest: with `UNDERCOVER_AGENT` pointing at a port nothing listens on, `start_dispatch` returns 503 "The agent's service isn't running"
-- [ ] pytest, with the backend wired to the service in-process: while a run is going, the backend's `start_dispatch` returns 409 "A dispatch or evaluation is already running"
-- [ ] pytest: N of 0 or 26 returns 422 from the backend's `start_dispatch`
-- [ ] The existing sign-off tests pass through `agent_service.resume_claim`
-- [ ] `grep -rn "UNDERCOVER_AGENT\|/resume\|8002" backend --include=*.py` finds them only in `backend/agent_service.py` and the tests
-- [ ] vitest: the start form starts at 3, keeps N between 1 and 25, starts a dispatch with the N chosen and says "Dispatch started", and shows the 409 and 503 messages
-- [ ] vitest: the run panel shows a running dispatch's claims with their states and its cost so far; a finished one with its run time, cost and the summary in sentences; a stopped one as stopped, with its summary
-- [ ] e2e: on the queue page the handler sets 5 and starts a dispatch; the stand-in on port 8003 has been asked for a dispatch with 5 agents, and the page says it started
-- [ ] e2e: the test plays out a dispatch through the API, as `run.spec.ts` did with a run: it creates the dispatch, takes two claims while skipping the rest, works one to a decision and fails the other, records a model call and a piece of work on each and finishes the dispatch. Without a reload, the panel shows the two claims and where each stands, the model cost, the time and the summary
-- [ ] e2e: the other tests still pass, and the to-do list test is gone
-- [ ] In the browser, with only `npm run dev:backend` and `npm run dev:dashboard` running, "Start a dispatch" shows "The agent's service isn't running", and `browser_console_messages` shows no errors other than the refused request
-- [ ] `npm run check` passes
+- [x] pytest: the backend's `start_dispatch` with N=5 asks the service once with 5, returns 202 and creates no run
+- [x] pytest: with `UNDERCOVER_AGENT` pointing at a port nothing listens on, `start_dispatch` returns 503 "The agent's service isn't running"
+- [x] pytest, with the backend wired to the service in-process: while a run is going, the backend's `start_dispatch` returns 409 "A dispatch or evaluation is already running"
+- [x] pytest: N of 0 or 26 returns 422 from the backend's `start_dispatch`
+- [x] The existing sign-off tests pass through `agent_service.resume_claim`
+- [x] `grep -rn "UNDERCOVER_AGENT\|/resume\|8002" backend --include=*.py` finds them only in `backend/agent_service.py` and the tests
+- [x] vitest: the start form starts at 3, keeps N between 1 and 25, starts a dispatch with the N chosen and says "Dispatch started", and shows the 409 and 503 messages
+- [x] vitest: the run panel shows a running dispatch's claims with their states and its cost so far; a finished one with its run time, cost and the summary in sentences; a stopped one as stopped, with its summary
+- [x] e2e: on the queue page the handler sets 5 and starts a dispatch; the stand-in on port 8003 has been asked for a dispatch with 5 agents, and the page says it started
+- [x] e2e: the test plays out a dispatch through the API, as `run.spec.ts` did with a run: it creates the dispatch, takes two claims while skipping the rest, works one to a decision and fails the other, records a model call and a piece of work on each and finishes the dispatch. Without a reload, the panel shows the two claims and where each stands, the model cost, the time and the summary
+- [x] e2e: the other tests still pass, and the to-do list test is gone
+- [x] In the browser, with only `npm run dev:backend` and `npm run dev:dashboard` running, "Start a dispatch" shows "The agent's service isn't running", and `browser_console_messages` shows no errors other than the refused request
+- [x] `npm run check` passes
 
 ## Phase 4: Evaluations
 

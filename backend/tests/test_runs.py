@@ -4,6 +4,7 @@ from contextlib import closing
 
 import pytest
 
+from backend import agent_service
 from backend.database import ROOT
 from backend.tests.test_workflow import decide, pay, start
 
@@ -209,3 +210,35 @@ def test_a_finished_dispatch_is_summed_up_from_the_records(client):
         "in_progress": ["CLM-1006"],
     }
     assert found["run_seconds"] >= 0
+
+
+@pytest.fixture
+def asked(monkeypatch):
+    """Record the dispatches the backend asks the agent's service to start."""
+    started = []
+    monkeypatch.setattr(agent_service, "start_dispatch", started.append)
+    return started
+
+
+def test_starting_a_dispatch_asks_the_agents_service(client, asked):
+    response = client.post("/api/dispatches/start", json={"agents": 5})
+    assert response.status_code == 202
+    assert response.json() == {"status": "started"}
+    assert asked == [5]
+    assert latest(client) is None
+
+
+@pytest.mark.parametrize("agents", [0, 26])
+def test_starting_a_dispatch_needs_between_1_and_25_agents(client, asked, agents):
+    response = client.post("/api/dispatches/start", json={"agents": agents})
+    assert response.status_code == 422
+    assert asked == []
+
+
+def test_starting_a_dispatch_says_when_the_agents_service_is_not_running(
+    client, monkeypatch
+):
+    monkeypatch.setenv("UNDERCOVER_AGENT", "http://127.0.0.1:9")
+    response = client.post("/api/dispatches/start", json={"agents": 3})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The agent's service isn't running"

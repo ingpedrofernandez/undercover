@@ -3,8 +3,8 @@ from contextlib import closing
 
 import pytest
 
-from backend import agent_client
-from backend.agent_client import resume_claim
+from backend import agent_service
+from backend.agent_service import resume_claim
 
 
 def start(client, claim_id):
@@ -235,7 +235,7 @@ def test_a_sign_off_asks_the_agent_to_resume_once_it_is_saved(
             query = "SELECT signed_off_by FROM decisions WHERE claim_id = ?"
             resumed.append((claim_id, db.execute(query, (claim_id,)).fetchone()[0]))
 
-    monkeypatch.setattr(agent_client, "resume_claim", saved_sign_off)
+    monkeypatch.setattr(agent_service, "resume_claim", saved_sign_off)
     start(client, "CLM-1002")
     decide(client, "CLM-1002", "approve", 1350.0)
     assert resumed == []
@@ -248,7 +248,7 @@ def test_a_sign_off_asks_the_agent_to_resume_once_it_is_saved(
 def test_a_sign_off_stands_when_the_agent_cannot_be_reached(
     client, monkeypatch, caplog
 ):
-    monkeypatch.setattr(agent_client, "resume_claim", resume_claim)
+    monkeypatch.setattr(agent_service, "resume_claim", resume_claim)
     monkeypatch.setenv("UNDERCOVER_AGENT", "http://127.0.0.1:9")
     start(client, "CLM-1002")
     decide(client, "CLM-1002", "approve", 1350.0)

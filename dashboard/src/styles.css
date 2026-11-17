@@ -395,7 +395,8 @@ p {
   padding: 14px 16px;
 }
 
-.sign-off-form {
+.sign-off-form,
+.start-form {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
@@ -403,7 +404,8 @@ p {
   margin-top: 12px;
 }
 
-.sign-off-form label {
+.sign-off-form label,
+.start-form label {
   display: grid;
   gap: 4px;
   font-size: 0.8rem;
@@ -411,7 +413,10 @@ p {
 }
 
 .sign-off-form select,
-.sign-off-form button {
+.sign-off-form button,
+.start-form select,
+.start-form input,
+.start-form button {
   font: inherit;
   font-size: 0.95rem;
   border-radius: 999px;
@@ -425,16 +430,51 @@ p {
   min-width: 200px;
 }
 
-.sign-off-form button {
+.start-form select,
+.start-form input {
+  background: var(--inset);
+  color: var(--ink);
+  min-width: 200px;
+}
+
+.sign-off-form button,
+.start-form button {
   background: var(--sea-green);
   color: var(--midnight);
   font-weight: 600;
   cursor: pointer;
 }
 
-.sign-off-form button:disabled {
+.sign-off-form button:disabled,
+.start-form button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.start-form {
+  margin: 0 0 20px;
+}
+
+.start-form input {
+  min-width: 0;
+  width: 6em;
+}
+
+.start-form .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.start-form .check input {
+  width: auto;
+}
+
+.form-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .form-error {

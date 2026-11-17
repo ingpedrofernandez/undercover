@@ -244,6 +244,10 @@ class CreateDispatchRequest(BaseModel):
     reasoning_effort: Effort
 
 
+class StartDispatchRequest(BaseModel):
+    agents: Agents
+
+
 class TakeClaimsRequest(BaseModel):
     skip: list[str] = Field(
         description="Claims to leave out, such as those the agent's service is resuming"

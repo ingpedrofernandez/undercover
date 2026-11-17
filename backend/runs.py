@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import Connection, RowMapping, insert, select, update
 
+from backend import agent_service
 from backend.database import Database, claims, now, run_claims, runs
 from backend.models import (
     CreateDispatchRequest,
@@ -13,6 +14,7 @@ from backend.models import (
     HeldPayout,
     Run,
     RunClaim,
+    StartDispatchRequest,
     TakeClaimsRequest,
 )
 from backend.run_records import claims_of, create_run, find_run, run_seconds, to_run
@@ -71,6 +73,13 @@ def queue_to_work(db: Connection, skip: list[str]) -> list[str]:
         key=lambda row: (json.loads(row["record"])["submitted_on"], row["claim_id"]),
     )
     return [row["claim_id"] for row in oldest_first]
+
+
+@router.post("/dispatches/start", operation_id="start_dispatch", status_code=202)
+def start_dispatch(request: StartDispatchRequest) -> dict[str, str]:
+    """Ask the agent's service to start a dispatch with N claim agents at once."""
+    agent_service.start_dispatch(request.agents)
+    return {"status": "started"}
 
 
 @router.post("/dispatches", operation_id="create_dispatch")

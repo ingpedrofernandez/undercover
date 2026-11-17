@@ -18,8 +18,27 @@ const clock = new Intl.DateTimeFormat("en-US", {
   second: "2-digit",
 });
 
+const cents = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
+
 export function money(amount: number): string {
   return dollars.format(amount);
+}
+
+// What a model costs, to a hundredth of a cent, as small costs need.
+export function cost(amount: number): string {
+  return cents.format(amount);
+}
+
+export function duration(seconds: number): string {
+  const whole = Math.round(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return minutes ? `${String(minutes)}m ${String(rest)}s` : `${String(rest)}s`;
 }
 
 export function date(isoDate: string): string {

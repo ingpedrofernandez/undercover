@@ -206,6 +206,8 @@ export const api = {
   getInstructions: () => request<Instructions>("/api/instructions"),
   listHandlers: () => request<Handler[]>("/api/handlers"),
   getLatestDispatch: () => request<Dispatch | null>("/api/dispatches/latest"),
+  startDispatch: (agents: number) =>
+    post<{ status: string }>("/api/dispatches/start", { agents }),
   signOff: (claimId: string, handlerId: string) =>
     post<Claim>(`${claimPath(claimId)}/sign-off`, { handler_id: handlerId }),
 };
