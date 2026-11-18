@@ -32,9 +32,7 @@ test("a handler starts an evaluation on the scoreboard", async ({
   await page.goto("/scoreboard");
   const form = page.getByRole("form", { name: "Start an evaluation" });
   await form.getByRole("combobox", { name: "Set" }).selectOption("held_out");
-  await form
-    .getByRole("checkbox", { name: "Just the five tiny claims" })
-    .check();
+  await form.getByRole("combobox", { name: "Claims" }).selectOption("tiny");
   await form
     .getByRole("spinbutton", { name: "Claim agents at once" })
     .fill("5");

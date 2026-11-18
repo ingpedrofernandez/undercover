@@ -169,6 +169,10 @@ it("lists the evaluations with every measure", async () => {
     "25",
   ]);
   expect(cells(second).at(-1)).toBe("2m 30s");
+  expect(within(first).getByText("Stopped").className).toBe("chip run-stopped");
+  expect(within(second).getByText("Finished").className).toBe(
+    "chip run-finished",
+  );
   expect(table.getByRole("link", { name: "Evaluation 7" })).toHaveProperty(
     "href",
     expect.stringMatching(/\/evaluations\/7$/),
@@ -194,9 +198,10 @@ it("starts an evaluation of the set chosen", async () => {
   fireEvent.change(form.getByRole("combobox", { name: "Set" }), {
     target: { value: "held_out" },
   });
-  fireEvent.click(
-    form.getByRole("checkbox", { name: "Just the five tiny claims" }),
-  );
+  const claims = form.getByRole("combobox", { name: "Claims" });
+  expect(claims).toHaveProperty("value", "all");
+  expect(within(claims).getByRole("option", { name: "All 25" })).toBeDefined();
+  fireEvent.change(claims, { target: { value: "tiny" } });
   fireEvent.change(
     form.getByRole("spinbutton", { name: "Claim agents at once" }),
     { target: { value: "5" } },

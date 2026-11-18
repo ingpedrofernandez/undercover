@@ -2,14 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { api, type EvalSet, type EvaluationSummary } from "../api";
 import { AgentsForm } from "../components/AgentsForm";
+import { RunStatusChip } from "../components/Chips";
 import { Message } from "../components/Message";
-import {
-  measureColumns,
-  runStatusLabels,
-  setLabels,
-  setName,
-  time,
-} from "../format";
+import { measureColumns, setLabels, setName, time } from "../format";
 import { REFRESH_MS, useLoad } from "../useLoad";
 
 export function ScoreboardPage() {
@@ -42,15 +37,17 @@ export function ScoreboardPage() {
             <option value="held_out">{setLabels.held_out}</option>
           </select>
         </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={tiny}
+        <label>
+          Claims
+          <select
+            value={tiny ? "tiny" : "all"}
             onChange={(event) => {
-              setTiny(event.target.checked);
+              setTiny(event.target.value === "tiny");
             }}
-          />
-          Just the five tiny claims
+          >
+            <option value="all">All 25</option>
+            <option value="tiny">Just the five tiny claims</option>
+          </select>
         </label>
       </AgentsForm>
       <section className="panel table-scroll" aria-label="Evaluations">
@@ -101,7 +98,9 @@ function EvaluationsTable({
             <td className="nowrap">
               {evaluation.model} ({evaluation.reasoning_effort})
             </td>
-            <td>{runStatusLabels[evaluation.status]}</td>
+            <td>
+              <RunStatusChip status={evaluation.status} />
+            </td>
             <td className="num mono">{evaluation.claim_count}</td>
             {measureColumns.map(([heading, value]) => (
               <td className="num mono" key={heading}>

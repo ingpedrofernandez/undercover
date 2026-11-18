@@ -174,12 +174,14 @@ p {
 }
 
 .status-decided,
-.decision-approve {
+.decision-approve,
+.run-finished {
   background: var(--sea-green);
 }
 
 .status-in_progress,
-.decision-refer {
+.decision-refer,
+.run-running {
   background: var(--marigold);
 }
 
@@ -193,7 +195,8 @@ p {
   color: #ffffff;
 }
 
-.status-left_for_handler {
+.status-left_for_handler,
+.run-stopped {
   background: var(--raspberry);
   color: #ffffff;
 }
@@ -479,18 +482,6 @@ p {
 .start-form input {
   min-width: 0;
   width: 6em;
-}
-
-.start-form .check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.95rem;
-  color: var(--ink);
-}
-
-.start-form .check input {
-  width: auto;
 }
 
 .form-note {
